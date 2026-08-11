@@ -48,7 +48,7 @@ New-Item -ItemType Directory -Path "D:\Minecraft\CompatLoginServer"
 Set-Location "D:\Minecraft\CompatLoginServer"
 ```
 
-路径可以自行修改。建议避免把生产服务器放进会实时同步、锁定文件的 OneDrive 目录。
+路径可以自行修改。生产服务器建议使用本地独立目录，避免实时同步或文件锁定影响运行。
 
 ### 第 3 步：下载 Fabric 服务端启动器
 
@@ -207,7 +207,7 @@ pause
 如果旧版 Compat Login 曾在 Agent 环境下生成过随机端口地址，例如：
 
 ```text
-http://127.0.0.1:50378/https/sessionserver.mojang.com/session/minecraft/hasJoined
+http://127.0.0.1:<随机端口>/https/sessionserver.mojang.com/session/minecraft/hasJoined
 ```
 
 `0.2.0` 会自动：
@@ -302,7 +302,7 @@ config\compat_login.json
 - LittleSkin 登录网页或注册网页；
 - `/authserver/authenticate` 密码登录接口；
 - 玩家邮箱、密码、access token；
-- 不受你信任的第三方服务器；
+- 未经服主信任的第三方服务器；
 - 公网上的明文 `http://` 地址。
 
 玩家密码只应提交给玩家选择的启动器和身份源，不能写进服务端配置。
@@ -341,7 +341,7 @@ config\compat_login.json
 ]
 ```
 
-只配置你信任的身份源。身份源有能力声明玩家名、UUID 和档案属性；恶意身份源可能冒充其他来源的玩家。
+仅配置可信身份源。身份源有能力声明玩家名、UUID 和档案属性；恶意身份源可能冒充其他来源的玩家。
 
 ### 第 14 步：仅在可信内网使用 HTTP
 
@@ -422,10 +422,10 @@ Authenticated PlayerName (uuid) via LittleSkin
 
 Compat Login 不需要 MCDR 插件。MCDR 只负责启动进程、读取日志和管理服务器。
 
-下面以你正在使用的 MCDReforged `2.15.7` 为例。推荐目录为：
+下面以 MCDReforged `2.x` 为例。Windows 环境可使用以下通用目录结构：
 
 ```text
-D:\IHC Server\
+D:\Minecraft\MCDRServer\
 ├─ start-mcdr.bat                           # 可选
 ├─ config.yml
 ├─ permission.yml
@@ -453,12 +453,12 @@ encoding: utf8
 decoding: utf8
 ```
 
-- `working_directory: server` 表示 MCDR 会在 `D:\IHC Server\server` 中启动 Fabric；
+- `working_directory: server` 表示 MCDR 会在根目录的 `server` 子目录中启动 Fabric；
 - `start_command: start.bat` 指向的是 `server\start.bat`，不是根目录脚本；
 - Fabric 服务器使用 `vanilla_handler`；
 - UTF-8 编解码可避免 MCDR 和 Minecraft 日志乱码。
 
-不使用服务端 authlib-injector 时，`D:\IHC Server\server\start.bat` 写为：
+不使用服务端 authlib-injector 时，`server\start.bat` 写为：
 
 ```bat
 @echo off
@@ -474,7 +474,7 @@ java -Xms2G -Xmx8G -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encodi
 
 MCDR 管理的服务端脚本末尾不要写 `pause`，否则服务器正常停止后批处理进程仍可能不退出。
 
-如果希望双击脚本启动 MCDR，可选的根目录 `D:\IHC Server\start-mcdr.bat` 写为：
+如果希望双击脚本启动 MCDR，可在 MCDR 根目录创建可选的 `start-mcdr.bat`：
 
 ```bat
 @echo off
@@ -483,7 +483,7 @@ mcdreforged
 pause
 ```
 
-也可以打开命令行，进入 `D:\IHC Server` 后直接执行：
+也可以打开命令行，进入 MCDR 根目录后直接执行：
 
 ```powershell
 mcdreforged
@@ -564,7 +564,7 @@ online-mode=true
 
 ## 十、安全说明
 
-- 只添加你信任的身份源；
+- 只添加可信身份源；
 - 公网身份源必须使用 HTTPS；
 - 权限、封禁和白名单尽量按 UUID 管理，而不是只看玩家名；
 - 不同身份源可能存在同名甚至 UUID 冲突，开放服务器前必须制定处理策略；
@@ -585,14 +585,12 @@ online-mode=true
 .\gradlew.bat runServer "-PcompatLoginTestAuthlibInjector=D:\path\to\authlib-injector-1.2.7.jar"
 ```
 
-Windows 下如果项目位于带中文字符的 OneDrive 路径，并遇到 `GradleWorkerMain` 或测试类 `ClassNotFoundException`，请把项目复制到纯 ASCII 路径后再运行测试。这是 Gradle 测试子进程的类路径问题，不影响生成的模组 JAR 或实际服务器运行。
-
 ## 参考资料
 
 - [Fabric 官方服务端启动器](https://fabricmc.net/use/server/)
 - [Fabric 1.21.11 开发文档](https://docs.fabricmc.net/1.21.11/develop/)
 - [Fabric API 官方 Maven](https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/)
-- [MCDReforged 2.15.7：配置](https://docs.mcdreforged.com/zh-cn/latest/configuration.html)
+- [MCDReforged：配置](https://docs.mcdreforged.com/zh-cn/latest/configuration.html)
 - [authlib-injector：在 Minecraft 服务端使用](https://yushijinhun.github.io/authlib-injector/en/using-authlib-injector-on-a-minecraft-server.html)
 - [authlib-injector：Yggdrasil 服务端技术规范](https://yushijinhun.github.io/authlib-injector/en/yggdrasil-server-technical-specification.html)
 - [LittleSkin Yggdrasil 文档](https://manual.littlesk.in/yggdrasil/)
