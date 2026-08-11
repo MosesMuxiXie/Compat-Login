@@ -23,7 +23,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Build and test universal JAR
-        run: ./gradlew build
+        run: bash ./gradlew build
       - name: Upload universal JAR
         uses: actions/upload-artifact@v7
         with:

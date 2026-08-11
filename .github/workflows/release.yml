@@ -22,7 +22,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Build release artifacts
-        run: ./gradlew build
+        run: bash ./gradlew build
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
