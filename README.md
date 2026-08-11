@@ -1,5 +1,7 @@
 # Compat Login
 
+**简体中文** | [English](README_EN.md)
+
 Compat Login 是一个只安装在服务端的 Fabric 模组。它让同一个 `online-mode=true` 服务器同时接受：
 
 - Mojang / Microsoft 正版账号；
@@ -136,11 +138,13 @@ stop
 
 ### 第 6 步：获取通用 JAR
 
-从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载：
+从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载与服务器 Minecraft 版本对应的附件，例如：
 
 ```text
-compat_login-universal-0.3.0.jar
+compat_login-0.3.0-mc-1.21.11.jar
 ```
+
+不同版本 Release 中的 JAR 文件名不同，但内容是同一套通用实现。自行从源码构建时，成品仍使用 `compat_login-universal-0.3.0.jar` 名称。
 
 也可以从源码构建：
 
@@ -159,7 +163,7 @@ build\libs\compat_login-universal-0.3.0.jar
 
 ```text
 mods\
-└─ compat_login-universal-0.3.0.jar
+└─ compat_login-0.3.0-mc-1.21.11.jar
 ```
 
 Compat Login 不强制依赖 Fabric API。如果其他模组需要 Fabric API，可继续保留对应 Minecraft 版本的 Fabric API JAR。
@@ -420,7 +424,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-universal-0.3.0.jar
+      └─ compat_login-0.3.0-mc-1.21.11.jar
 ```
 
 根目录 `config.yml` 至少确认：
@@ -461,7 +465,7 @@ pause
 1. 在控制台执行 `stop`；
 2. 备份整个服务器，至少备份世界和 `config`；
 3. 从 `mods` 删除所有旧的 `compat_login-*.jar`；
-4. 放入 `compat_login-universal-0.3.0.jar`；
+4. 从 Releases 下载与服务器版本对应的 `compat_login-0.3.0-mc-<Minecraft版本>.jar` 并放入 `mods`；
 5. 保留原来的 `config/compat_login.json`；
 6. 已有 authlib-injector 时可保留原 `-javaagent` 参数；
 7. 将 Fabric Loader 更新到 `0.19.3` 或更新稳定版；
@@ -494,7 +498,7 @@ online-mode=true
 
 ### Fabric 报告重复的 `compat_login`
 
-`mods` 中存在多个 Compat Login JAR。删除旧版，只保留一个 `compat_login-universal-0.3.0.jar`。
+`mods` 中存在多个 Compat Login JAR。删除旧版，只保留一个与服务器 Minecraft 版本对应的 Compat Login `0.3.0` JAR。
 
 ### `http is disabled`
 
@@ -566,7 +570,7 @@ GitHub Actions 包含：
 Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则返回 `ProfileResult`。Compat Login 使用：
 
 - 不依赖特定 authlib 版本的内部档案模型；
-- 两个受 Mixin 分组约束的方法签名适配器；
+- 多个受 Mixin 分组约束的方法签名适配器；
 - 运行时反射创建旧版 `GameProfile` 或新版 `ProfileResult`；
 - Java 8 可用的 `HttpURLConnection`；
 - 直接读取 `server.properties` 的安全检查。
@@ -588,4 +592,4 @@ Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则�
 
 ## License
 
-CC0-1.0，详见 `LICENSE`。
+本项目采用 [Apache License 2.0](LICENSE)。
