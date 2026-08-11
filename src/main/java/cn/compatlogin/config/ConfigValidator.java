@@ -48,7 +48,7 @@ public final class ConfigValidator {
                 continue;
             }
 
-            if (service.name == null || service.name.isBlank()) {
+            if (isBlank(service.name)) {
                 issues.add(path + ".name: must not be blank");
             } else {
                 if (service.name.length() > 64) {
@@ -88,7 +88,7 @@ public final class ConfigValidator {
         boolean allowInsecureHttp
     ) {
         String path = servicePath + ".hasJoinedUrl";
-        if (value == null || value.isBlank()) {
+        if (isBlank(value)) {
             issues.add(path + ": must not be blank");
             return;
         }
@@ -136,5 +136,9 @@ public final class ConfigValidator {
             || normalized.equals("127.0.0.1")
             || normalized.equals("::1")
             || normalized.equals("0:0:0:0:0:0:0:1");
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }

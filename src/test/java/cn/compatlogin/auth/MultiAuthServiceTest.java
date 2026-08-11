@@ -1,7 +1,6 @@
 package cn.compatlogin.auth;
 
 import cn.compatlogin.config.CompatLoginConfig;
-import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -43,12 +42,15 @@ class MultiAuthServiceTest {
         server.start();
 
         MultiAuthService service = new MultiAuthService(configuration(server.getAddress().getPort(), false));
-        ProfileResult result = service.hasJoinedServer("Notch", "server-hash", null);
+        AuthenticatedProfile result = service.hasJoinedServer("Notch", "server-hash", null);
 
         assertNotNull(result);
-        assertEquals("069a79f4-44e9-4726-a5be-fca90e38aaf5", result.profile().id().toString());
-        assertEquals("Notch", result.profile().name());
-        assertTrue(result.profile().properties().containsKey("textures"));
+        assertEquals("069a79f4-44e9-4726-a5be-fca90e38aaf5", result.getId().toString());
+        assertEquals("Notch", result.getName());
+        assertEquals(1, result.getProperties().size());
+        assertEquals("textures", result.getProperties().get(0).getName());
+        assertEquals("encoded-texture", result.getProperties().get(0).getValue());
+        assertEquals("signature", result.getProperties().get(0).getSignature());
     }
 
     @Test

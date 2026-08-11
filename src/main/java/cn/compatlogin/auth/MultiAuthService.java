@@ -3,131 +3,140 @@ package cn.compatlogin.auth;
 import cn.compatlogin.CompatLogin;
 import cn.compatlogin.config.CompatLoginConfig;
 import cn.compatlogin.config.YggdrasilEndpoint;
-import com.google.common.collect.ImmutableMultimap;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
-import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.exceptions.AuthenticationUnavailableException;
-import com.mojang.authlib.properties.Property;
-import com.mojang.authlib.properties.PropertyMap;
-import com.mojang.authlib.yggdrasil.ProfileResult;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class MultiAuthService {
-    private static final long WARNING_INTERVAL_NANOS = Duration.ofSeconds(30).toNanos();
+    private static final long WARNING_INTERVAL_NANOS = 30L * 1_000_000_000L;
 
-    private final HttpClient httpClient;
-    private final Duration requestTimeout;
+    private final int connectTimeoutMillis;
+    private final int requestTimeoutMillis;
     private final int maxResponseBytes;
     private final List<Provider> providers;
 
     public MultiAuthService(CompatLoginConfig.Authentication config) {
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(config.connectTimeoutSeconds))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
-        this.requestTimeout = Duration.ofSeconds(config.requestTimeoutSeconds);
+        this.connectTimeoutMillis = config.connectTimeoutSeconds * 1_000;
+        this.requestTimeoutMillis = config.requestTimeoutSeconds * 1_000;
         this.maxResponseBytes = config.maxResponseBytes;
 
-        List<Provider> enabledProviders = new ArrayList<>();
+        List<Provider> enabledProviders = new ArrayList<Provider>();
         for (int index = 0; index < config.services.size(); index++) {
             CompatLoginConfig.Service service = config.services.get(index);
             if (Boolean.TRUE.equals(service.enabled)) {
                 enabledProviders.add(new Provider(
                     index,
                     service.name,
-                    YggdrasilEndpoint.resolve(service.hasJoinedUrl),
-                    new AtomicLong()
+                    YggdrasilEndpoint.resolve(service.hasJoinedUrl)
                 ));
             }
         }
-        this.providers = List.copyOf(enabledProviders);
+        this.providers = Collections.unmodifiableList(enabledProviders);
     }
 
     public int providerCount() {
         return providers.size();
     }
 
-    public ProfileResult hasJoinedServer(String username, String serverId, InetAddress address)
-        throws AuthenticationUnavailableException {
-        List<String> failures = new ArrayList<>();
+    public AuthenticatedProfile hasJoinedServer(String username, String serverId, InetAddress address)
+        throws AuthenticationServiceUnavailableException {
+        List<String> failures = new ArrayList<String>();
         for (Provider provider : providers) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new AuthenticationServiceUnavailableException("Authentication request was interrupted");
+            }
+
             try {
-                Optional<ProfileResult> result = query(provider, username, serverId, address);
-                if (result.isPresent()) {
-                    GameProfile profile = result.get().profile();
+                AuthenticatedProfile result = query(provider, username, serverId, address);
+                if (result != null) {
                     CompatLogin.LOGGER.info(
                         "Authenticated {} ({}) via {}",
-                        profile.name(),
-                        profile.id(),
-                        provider.name()
+                        result.getName(),
+                        result.getId(),
+                        provider.name
                     );
-                    return result.get();
+                    return result;
                 }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new AuthenticationUnavailableException("Authentication request was interrupted", exception);
             } catch (IOException | IllegalArgumentException | JsonParseException exception) {
                 String reason = readableMessage(exception);
-                failures.add(provider.name() + ": " + reason);
+                failures.add(provider.name + ": " + reason);
                 logProviderWarning(provider, reason);
             }
         }
 
         if (!failures.isEmpty()) {
-            throw new AuthenticationUnavailableException(
-                "One or more configured authentication services were unavailable: " + String.join("; ", failures)
+            throw new AuthenticationServiceUnavailableException(
+                "One or more configured authentication services were unavailable: " + join(failures)
             );
         }
         return null;
     }
 
-    private Optional<ProfileResult> query(Provider provider, String username, String serverId, InetAddress address)
-        throws IOException, InterruptedException {
-        URI requestUri = createRequestUri(provider.endpoint(), username, serverId, address);
-        HttpRequest request = HttpRequest.newBuilder(requestUri)
-            .timeout(requestTimeout)
-            .header("Accept", "application/json")
-            .header("User-Agent", "Compat-Login/0.1")
-            .GET()
-            .build();
+    private AuthenticatedProfile query(Provider provider, String username, String serverId, InetAddress address)
+        throws IOException {
+        URI requestUri = createRequestUri(provider.endpoint, username, serverId, address);
+        HttpURLConnection connection = (HttpURLConnection) requestUri.toURL().openConnection();
+        connection.setRequestMethod("GET");
+        connection.setConnectTimeout(connectTimeoutMillis);
+        connection.setReadTimeout(requestTimeoutMillis);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "Compat-Login/0.3");
 
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        int status = response.statusCode();
-        try (InputStream body = response.body()) {
-            if (status == 204 || status == 404) {
-                return Optional.empty();
+        try {
+            int status = connection.getResponseCode();
+            if (status == HttpURLConnection.HTTP_NO_CONTENT || status == HttpURLConnection.HTTP_NOT_FOUND) {
+                closeQuietly(connection.getErrorStream());
+                return null;
             }
-            if (status != 200) {
-                throw new IOException("HTTP " + status + " from " + provider.endpoint().getHost());
+            if (status != HttpURLConnection.HTTP_OK) {
+                closeQuietly(connection.getErrorStream());
+                throw new IOException("HTTP " + status + " from " + provider.endpoint.getHost());
             }
 
-            byte[] bytes = body.readNBytes(maxResponseBytes + 1);
-            if (bytes.length > maxResponseBytes) {
+            InputStream body = connection.getInputStream();
+            try {
+                String json = new String(readBounded(body), StandardCharsets.UTF_8);
+                return parseProfile(json, username);
+            } finally {
+                body.close();
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private byte[] readBounded(InputStream body) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maxResponseBytes, 8_192));
+        byte[] buffer = new byte[8_192];
+        int total = 0;
+        int read;
+        while ((read = body.read(buffer)) >= 0) {
+            total += read;
+            if (total > maxResponseBytes) {
                 throw new IOException("response exceeds authentication.maxResponseBytes (" + maxResponseBytes + ")");
             }
-            String json = new String(bytes, StandardCharsets.UTF_8);
-            return Optional.of(parseProfile(json, username));
+            output.write(buffer, 0, read);
         }
+        return output.toByteArray();
     }
 
     private static URI createRequestUri(URI endpoint, String username, String serverId, InetAddress address) {
@@ -141,11 +150,15 @@ public final class MultiAuthService {
     }
 
     private static String encode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException impossible) {
+            throw new AssertionError("UTF-8 is required by every Java runtime", impossible);
+        }
     }
 
-    private static ProfileResult parseProfile(String json, String requestedUsername) {
-        JsonElement root = JsonParser.parseString(json);
+    private static AuthenticatedProfile parseProfile(String json, String requestedUsername) {
+        JsonElement root = new JsonParser().parse(json);
         if (!root.isJsonObject()) {
             throw new JsonParseException("hasJoined response must be a JSON object");
         }
@@ -158,7 +171,7 @@ public final class MultiAuthService {
             );
         }
 
-        ImmutableMultimap.Builder<String, Property> properties = ImmutableMultimap.builder();
+        List<AuthenticatedProfile.ProfileProperty> properties = new ArrayList<AuthenticatedProfile.ProfileProperty>();
         JsonElement propertiesElement = object.get("properties");
         if (propertiesElement != null && !propertiesElement.isJsonNull()) {
             if (!propertiesElement.isJsonArray()) {
@@ -177,21 +190,18 @@ public final class MultiAuthService {
                 String name = requiredString(propertyObject, "name");
                 String value = requiredString(propertyObject, "value");
                 JsonElement signatureElement = propertyObject.get("signature");
-                Property property;
-                if (signatureElement == null || signatureElement.isJsonNull()) {
-                    property = new Property(name, value);
-                } else if (signatureElement.isJsonPrimitive() && signatureElement.getAsJsonPrimitive().isString()) {
-                    property = new Property(name, value, signatureElement.getAsString());
-                } else {
-                    throw new JsonParseException("properties[" + index + "].signature must be a string");
+                String signature = null;
+                if (signatureElement != null && !signatureElement.isJsonNull()) {
+                    if (!signatureElement.isJsonPrimitive() || !signatureElement.getAsJsonPrimitive().isString()) {
+                        throw new JsonParseException("properties[" + index + "].signature must be a string");
+                    }
+                    signature = signatureElement.getAsString();
                 }
-                properties.put(name, property);
+                properties.add(new AuthenticatedProfile.ProfileProperty(name, value, signature));
             }
         }
 
-        UUID id = parseUuid(idValue);
-        GameProfile profile = new GameProfile(id, profileName, new PropertyMap(properties.build()));
-        return new ProfileResult(profile);
+        return new AuthenticatedProfile(parseUuid(idValue), profileName, properties);
     }
 
     private static String requiredString(JsonObject object, String field) {
@@ -200,7 +210,7 @@ public final class MultiAuthService {
             throw new JsonParseException("hasJoined response field '" + field + "' must be a string");
         }
         String string = value.getAsString();
-        if (string.isBlank()) {
+        if (isBlank(string)) {
             throw new JsonParseException("hasJoined response field '" + field + "' must not be blank");
         }
         return string;
@@ -221,23 +231,59 @@ public final class MultiAuthService {
 
     private static void logProviderWarning(Provider provider, String reason) {
         long now = System.nanoTime();
-        long previous = provider.lastWarningNanos().get();
+        long previous = provider.lastWarningNanos.get();
         if ((previous == 0L || now - previous >= WARNING_INTERVAL_NANOS)
-            && provider.lastWarningNanos().compareAndSet(previous, now)) {
+            && provider.lastWarningNanos.compareAndSet(previous, now)) {
             CompatLogin.LOGGER.warn(
                 "[WARNING] authentication.services[{}] ({}): hasJoined request failed: {}",
-                provider.configIndex(),
-                provider.name(),
+                provider.configIndex,
+                provider.name,
                 reason
             );
         }
     }
 
-    private static String readableMessage(Exception exception) {
-        String message = exception.getMessage();
-        return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
+    private static void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // The response is already being discarded.
+        }
     }
 
-    private record Provider(int configIndex, String name, URI endpoint, AtomicLong lastWarningNanos) {
+    private static String join(List<String> values) {
+        StringBuilder result = new StringBuilder();
+        for (String value : values) {
+            if (result.length() > 0) {
+                result.append("; ");
+            }
+            result.append(value);
+        }
+        return result.toString();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static String readableMessage(Exception exception) {
+        String message = exception.getMessage();
+        return isBlank(message) ? exception.getClass().getSimpleName() : message;
+    }
+
+    private static final class Provider {
+        private final int configIndex;
+        private final String name;
+        private final URI endpoint;
+        private final AtomicLong lastWarningNanos = new AtomicLong();
+
+        private Provider(int configIndex, String name, URI endpoint) {
+            this.configIndex = configIndex;
+            this.name = name;
+            this.endpoint = endpoint;
+        }
     }
 }

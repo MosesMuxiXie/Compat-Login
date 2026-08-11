@@ -13,7 +13,7 @@ final class AuthlibInjectorCompatibility {
         Optional<String> argument = findAuthlibInjectorArgument(
             ManagementFactory.getRuntimeMXBean().getInputArguments()
         );
-        if (argument.isEmpty()) {
+        if (!argument.isPresent()) {
             return false;
         }
 
