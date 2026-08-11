@@ -3,6 +3,10 @@ plugins {
 	id 'maven-publish'
 }
 
+base {
+	archivesName = "compat_login-universal"
+}
+
 repositories {
 	// Add repositories to retrieve artifacts from in here.
 	// You should only use this when depending on other mods because
@@ -34,9 +38,6 @@ dependencies {
 	mappings loom.officialMojangMappings()
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
 	testImplementation "org.junit.jupiter:junit-jupiter:5.12.2"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.12.2"
 }
@@ -54,7 +55,11 @@ processResources {
 	}
 }
 
-tasks.withType(JavaCompile).configureEach {
+tasks.named("compileJava", JavaCompile) {
+	it.options.release = 8
+}
+
+tasks.named("compileTestJava", JavaCompile) {
 	it.options.release = 21
 }
 
@@ -64,9 +69,29 @@ java {
 	// If you remove this line, sources will not be generated.
 	withSourcesJar()
 
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
+	sourceCompatibility = JavaVersion.VERSION_1_8
+	targetCompatibility = JavaVersion.VERSION_1_8
 }
+
+tasks.register("verifyJava8Bytecode") {
+	dependsOn classes
+	doLast {
+		sourceSets.main.output.classesDirs.files.each { directory ->
+			fileTree(directory).matching { include "**/*.class" }.files.each { classFile ->
+				classFile.withDataInputStream { input ->
+					def magic = input.readInt()
+					input.readUnsignedShort()
+					def major = input.readUnsignedShort()
+					if (magic != 0xCAFEBABE as int || major > 52) {
+						throw new GradleException("${classFile} is not Java 8 bytecode (major=${major})")
+					}
+				}
+			}
+		}
+	}
+}
+
+check.dependsOn verifyJava8Bytecode
 
 jar {
 	def projectName = project.name

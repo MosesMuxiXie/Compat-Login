@@ -8,10 +8,13 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public final class ConfigManager {
@@ -36,10 +39,10 @@ public final class ConfigManager {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             config = GSON.fromJson(reader, CompatLoginConfig.class);
         } catch (JsonParseException exception) {
-            fail(path, List.of("$: invalid JSON: " + readableMessage(exception)));
+            fail(path, Collections.singletonList("$: invalid JSON: " + readableMessage(exception)));
             throw new AssertionError("unreachable");
         } catch (IOException exception) {
-            fail(path, List.of("$: cannot read file: " + readableMessage(exception)));
+            fail(path, Collections.singletonList("$: cannot read file: " + readableMessage(exception)));
             throw new AssertionError("unreachable");
         }
 
@@ -62,7 +65,7 @@ public final class ConfigManager {
         try {
             writeConfig(path, CompatLoginConfig.defaults());
         } catch (IOException exception) {
-            fail(path, List.of("$: cannot create default configuration: " + readableMessage(exception)));
+            fail(path, Collections.singletonList("$: cannot create default configuration: " + readableMessage(exception)));
         }
     }
 
@@ -90,7 +93,10 @@ public final class ConfigManager {
     private static void writeConfig(Path path, CompatLoginConfig config) throws IOException {
         Files.createDirectories(path.getParent());
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
-        Files.writeString(temporary, GSON.toJson(config) + System.lineSeparator(), StandardCharsets.UTF_8);
+        try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
+            writer.write(GSON.toJson(config));
+            writer.write(System.lineSeparator());
+        }
         try {
             Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
@@ -99,9 +105,10 @@ public final class ConfigManager {
     }
 
     private static void fail(Path path, List<String> issues) {
-        List<String> warningLines = issues.stream()
-            .map(ConfigManager::warningLine)
-            .toList();
+        List<String> warningLines = new ArrayList<String>();
+        for (String issue : issues) {
+            warningLines.add(warningLine(issue));
+        }
         for (String warningLine : warningLines) {
             CompatLogin.LOGGER.warn(warningLine);
         }
@@ -123,6 +130,6 @@ public final class ConfigManager {
 
     private static String readableMessage(Exception exception) {
         String message = exception.getMessage();
-        return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
+        return message == null || message.trim().isEmpty() ? exception.getClass().getSimpleName() : message;
     }
 }
