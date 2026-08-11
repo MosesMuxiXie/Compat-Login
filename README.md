@@ -15,7 +15,7 @@ Compat Login 是一个只安装在服务端的 Fabric 模组。它让同一个 `
 Compat Login `0.3.0` 开始使用一个通用 JAR 覆盖 Minecraft `1.16` 至 `26.2`：
 
 ```text
-compat_login-universal-0.3.0.jar
+compat_login-universal-0.3.1.jar
 ```
 
 | 组件 | 支持范围 |
@@ -24,7 +24,7 @@ compat_login-universal-0.3.0.jar
 | Fabric Loader | 最低 `0.18.4`，使用最新稳定版 `0.19.3` 验证 |
 | Fabric API | 不需要；可与整合包中已有的 Fabric API 共存 |
 | authlib-injector | 可选；已验证 `1.2.7` |
-| Compat Login | `0.3.0` |
+| Compat Login | `0.3.1` |
 
 Minecraft `26.3` 快照不在当前支持范围内。快照的类和方法会继续变化，应在对应正式版发布并通过启动测试后再扩大范围。
 
@@ -138,13 +138,13 @@ stop
 
 ### 第 6 步：获取通用 JAR
 
-从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载与服务器 Minecraft 版本对应的附件，例如：
+从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载最新的通用附件：
 
 ```text
-compat_login-0.3.0-mc-1.21.11.jar
+compat_login-universal-0.3.1.jar
 ```
 
-不同版本 Release 中的 JAR 文件名不同，但内容是同一套通用实现。自行从源码构建时，成品仍使用 `compat_login-universal-0.3.0.jar` 名称。
+该 JAR 可用于本文支持表中的全部 Minecraft 版本。历史 `0.3.0` Release 使用按 Minecraft 版本命名的附件；从 `0.3.1` 开始只需下载同一个通用 JAR。
 
 也可以从源码构建：
 
@@ -156,14 +156,14 @@ compat_login-0.3.0-mc-1.21.11.jar
 成品位于：
 
 ```text
-build\libs\compat_login-universal-0.3.0.jar
+build\libs\compat_login-universal-0.3.1.jar
 ```
 
 ### 第 7 步：放入 `mods` 目录
 
 ```text
 mods\
-└─ compat_login-0.3.0-mc-1.21.11.jar
+└─ compat_login-universal-0.3.1.jar
 ```
 
 Compat Login 不强制依赖 Fabric API。如果其他模组需要 Fabric API，可继续保留对应 Minecraft 版本的 Fabric API JAR。
@@ -385,7 +385,7 @@ config\compat_login.json
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 0.3.0
+compat_login 0.3.1
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -424,7 +424,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-0.3.0-mc-1.21.11.jar
+      └─ compat_login-universal-0.3.1.jar
 ```
 
 根目录 `config.yml` 至少确认：
@@ -465,7 +465,7 @@ pause
 1. 在控制台执行 `stop`；
 2. 备份整个服务器，至少备份世界和 `config`；
 3. 从 `mods` 删除所有旧的 `compat_login-*.jar`；
-4. 从 Releases 下载与服务器版本对应的 `compat_login-0.3.0-mc-<Minecraft版本>.jar` 并放入 `mods`；
+4. 从 Releases 下载 `compat_login-universal-0.3.1.jar` 并放入 `mods`；
 5. 保留原来的 `config/compat_login.json`；
 6. 已有 authlib-injector 时可保留原 `-javaagent` 参数；
 7. 将 Fabric Loader 更新到 `0.19.3` 或更新稳定版；
@@ -498,7 +498,7 @@ online-mode=true
 
 ### Fabric 报告重复的 `compat_login`
 
-`mods` 中存在多个 Compat Login JAR。删除旧版，只保留一个与服务器 Minecraft 版本对应的 Compat Login `0.3.0` JAR。
+`mods` 中存在多个 Compat Login JAR。删除旧版，只保留一个 `compat_login-universal-0.3.1.jar`。
 
 ### `http is disabled`
 

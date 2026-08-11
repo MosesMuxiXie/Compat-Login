@@ -15,7 +15,7 @@ The mod never receives, stores, or forwards player passwords. Players still sign
 Starting with Compat Login `0.3.0`, one universal JAR covers Minecraft `1.16` through `26.2`:
 
 ```text
-compat_login-universal-0.3.0.jar
+compat_login-universal-0.3.1.jar
 ```
 
 | Component | Supported range |
@@ -24,7 +24,7 @@ compat_login-universal-0.3.0.jar
 | Fabric Loader | `0.18.4` or newer; tested with stable `0.19.3` |
 | Fabric API | not required; it may remain installed when other mods need it |
 | authlib-injector | optional; tested with `1.2.7` |
-| Compat Login | `0.3.0` |
+| Compat Login | `0.3.1` |
 
 Minecraft `26.3` snapshots are outside the current support range. Snapshot classes and methods may change; support should only be extended after the corresponding stable release passes the startup matrix.
 
@@ -138,13 +138,13 @@ Always stop the server cleanly before installing mods or changing authentication
 
 ### Step 6: Get the JAR
 
-Download the asset matching the server's Minecraft version from [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases), for example:
+Download the latest universal asset from [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases):
 
 ```text
-compat_login-0.3.0-mc-1.21.11.jar
+compat_login-universal-0.3.1.jar
 ```
 
-The release assets have version-specific names, but they contain the same universal implementation. A local source build still produces `compat_login-universal-0.3.0.jar`.
+This JAR works with every Minecraft version in the support table above. Historical `0.3.0` releases used version-specific asset names; starting with `0.3.1`, everyone downloads the same universal JAR.
 
 To build from source:
 
@@ -156,14 +156,14 @@ To build from source:
 The output is located at:
 
 ```text
-build\libs\compat_login-universal-0.3.0.jar
+build\libs\compat_login-universal-0.3.1.jar
 ```
 
 ### Step 7: Put it in `mods`
 
 ```text
 mods\
-└─ compat_login-0.3.0-mc-1.21.11.jar
+└─ compat_login-universal-0.3.1.jar
 ```
 
 Compat Login does not require Fabric API. Keep the Fabric API JAR for the matching Minecraft version if another installed mod needs it.
@@ -385,7 +385,7 @@ The startup log should contain the actual Minecraft and Loader versions, for exa
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 0.3.0
+compat_login 0.3.1
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -424,7 +424,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-0.3.0-mc-1.21.11.jar
+      └─ compat_login-universal-0.3.1.jar
 ```
 
 At minimum, confirm the following entries in the root `config.yml`:
@@ -465,7 +465,7 @@ pause
 1. Run `stop` in the server console.
 2. Back up the complete server, or at least the world and `config` directory.
 3. Delete every old `compat_login-*.jar` from `mods`.
-4. Download `compat_login-0.3.0-mc-<Minecraft-version>.jar` for the server version from Releases and put it in `mods`.
+4. Download `compat_login-universal-0.3.1.jar` from Releases and put it in `mods`.
 5. Keep the existing `config/compat_login.json`.
 6. Keep the existing `-javaagent` argument if the server already uses authlib-injector.
 7. Upgrade Fabric Loader to `0.19.3` or a newer stable release.
@@ -498,7 +498,7 @@ Fix every listed field and restart. The mod reports as many problems as possible
 
 ### Fabric reports duplicate `compat_login`
 
-The `mods` directory contains more than one Compat Login JAR. Delete the older files and keep exactly one Compat Login `0.3.0` JAR matching the server's Minecraft version.
+The `mods` directory contains more than one Compat Login JAR. Delete the older files and keep exactly one `compat_login-universal-0.3.1.jar`.
 
 ### `http is disabled`
 
