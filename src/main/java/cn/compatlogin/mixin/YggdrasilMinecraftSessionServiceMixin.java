@@ -7,6 +7,7 @@ import cn.compatlogin.auth.AuthlibProfileAdapter;
 import cn.compatlogin.auth.MultiAuthService;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Group;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -16,6 +17,23 @@ import java.net.InetAddress;
 @Mixin(targets = "com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService", remap = false)
 public abstract class YggdrasilMinecraftSessionServiceMixin {
     @Group(name = "compatLogin$hasJoinedServer", min = 1, max = 1)
+    @Inject(
+        method = "hasJoinedServer(Lcom/mojang/authlib/GameProfile;Ljava/lang/String;Ljava/net/InetAddress;)Lcom/mojang/authlib/GameProfile;",
+        at = @At("HEAD"),
+        cancellable = true,
+        remap = false,
+        require = 0
+    )
+    private void compatLogin$hasJoinedServerGameProfile(
+        @Coerce Object profile,
+        String serverId,
+        InetAddress address,
+        CallbackInfoReturnable<Object> callback
+    ) {
+        authenticate(AuthlibProfileAdapter.readProfileName(profile), serverId, address, callback, false);
+    }
+
+    @Group(name = "compatLogin$hasJoinedServer")
     @Inject(
         method = "hasJoinedServer(Ljava/lang/String;Ljava/lang/String;Ljava/net/InetAddress;)Lcom/mojang/authlib/GameProfile;",
         at = @At("HEAD"),

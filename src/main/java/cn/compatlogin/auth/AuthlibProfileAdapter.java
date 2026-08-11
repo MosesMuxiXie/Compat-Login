@@ -57,6 +57,14 @@ public final class AuthlibProfileAdapter {
         }
     }
 
+    public static String readProfileName(Object gameProfile) {
+        try {
+            return (String) invokeAccessor(gameProfile, "getName", "name");
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Cannot read the player name from an authlib GameProfile", unwrap(exception));
+        }
+    }
+
     public static void throwAuthenticationUnavailable(AuthenticationServiceUnavailableException cause) {
         Throwable authlibException;
         try {

@@ -25,6 +25,7 @@ class AuthlibProfileAdapterTest {
         assertEquals("com.mojang.authlib.GameProfile", gameProfile.getClass().getName());
         assertEquals(source.getId(), invoke(gameProfile, "getId", "id"));
         assertEquals("Notch", invoke(gameProfile, "getName", "name"));
+        assertEquals("Notch", AuthlibProfileAdapter.readProfileName(gameProfile));
         Object properties = invoke(gameProfile, "getProperties", "properties");
         assertTrue((Boolean) properties.getClass().getMethod("containsKey", Object.class).invoke(properties, "textures"));
     }
