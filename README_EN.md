@@ -403,6 +403,34 @@ Authenticated PlayerName (uuid) via Mojang
 Authenticated PlayerName (uuid) via LittleSkin
 ```
 
+### Merge player data between two UUIDs
+
+This operation overwrites the target account's data with the source account's data. Only an administrator whose `ops.json` level is at least `3` can begin it. Before starting, have both accounts join once so the server has their exact names and UUIDs, and make sure the source account is offline.
+
+The administrator runs:
+
+```text
+/account migrate <source-player-name> <target-player-name> begin
+```
+
+The server returns a one-time migration code that is valid for 15 minutes. The player then joins with the account that will receive the data. The chat prompt includes the confirmation command, which must be entered within five minutes:
+
+```text
+/account migrate confirm <migration-code>
+```
+
+`confirm` does not require operator permission, but the logged-in UUID must exactly match the migration's target UUID. After confirmation, the server temporarily bans and disconnects the target with the reason `player data migration taking place, wait for 5 minutes`. Once the target is fully offline, the server:
+
+- replaces the target UUID's `playerdata`, `advancements`, and `stats` files with the source files;
+- rewrites source UUID values inside player NBT/JSON and removes the source UUID files;
+- removes the source identity from `usercache.json` while retaining the correct target identity;
+- clears in-memory statistics and advancement caches so stale target data cannot overwrite the migration;
+- runs `pardon` after five minutes to remove the temporary migration ban.
+
+Every migration first backs up the source files, overwritten target files, and `usercache.json` under `config/compat_login/migration-backups/`. A write failure triggers an automatic rollback. Existing target data is overwritten, and a later login by the source account creates fresh data. The mod can reliably migrate only the vanilla UUID storage listed above; private databases owned by other mods or plugins must be migrated according to their documentation.
+
+If the prompt is ignored, its server-side confirmation state is deleted after five minutes. A server-only mod cannot retract an already displayed system message from a vanilla client's chat history.
+
 ## 7. MCDReforged deployment
 
 Compat Login is not an MCDR plugin. Put it in the Fabric server's `mods` directory. MCDR only starts the process, reads logs, and manages the server.

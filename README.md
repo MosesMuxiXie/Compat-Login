@@ -403,6 +403,34 @@ Authenticated PlayerName (uuid) via Mojang
 Authenticated PlayerName (uuid) via LittleSkin
 ```
 
+### 合并两个 UUID 的玩家数据
+
+此操作会用来源账号的数据覆盖目标账号数据，只能由 `ops.json` 中权限等级至少为 `3` 的管理员发起。开始前应让两个账号各登录服务器一次，以便服务器记录准确的名字和 UUID，并确保来源账号已经离线。
+
+管理员输入：
+
+```text
+/account migrate <来源玩家名> <目标玩家名> begin
+```
+
+服务器会向管理员返回一个一次性迁移码，有效期为 15 分钟。目标玩家随后使用接收数据的账号登录；聊天框会显示确认问题和确认指令。目标账号需要在提示出现后的 5 分钟内输入：
+
+```text
+/account migrate confirm <迁移码>
+```
+
+`confirm` 不要求管理员权限，但执行者的登录 UUID 必须与迁移目标 UUID 完全一致。确认后，服务器会以 `player data migration taking place, wait for 5 minutes` 为理由临时封禁并踢出目标玩家。目标玩家完全离线后，服务器会完成以下操作：
+
+- 将来源 UUID 的 `playerdata`、`advancements` 和 `stats` 文件覆盖到目标 UUID；
+- 改写玩家 NBT/JSON 中出现的来源 UUID，并删除来源 UUID 文件；
+- 从 `usercache.json` 删除来源身份缓存并保留正确的目标身份；
+- 清除服务端内存中的统计与进度缓存，避免旧目标数据在下次登录时覆盖迁移结果；
+- 5 分钟后自动执行 `pardon`，解除迁移用的临时封禁。
+
+每次迁移都会先把来源文件、被覆盖的目标文件和 `usercache.json` 备份到 `config/compat_login/migration-backups/`。中途写入失败时会自动回滚。已有目标数据会被覆盖；来源账号以后再次登录会创建一份新的空白数据。模组只能可靠迁移上述原版 UUID 存档，其他模组或插件的私有数据库需要按其各自文档另行迁移。
+
+忽略提示时，服务端的确认状态会在 5 分钟后自动删除。纯服务端模组无法从原版客户端的历史聊天记录中撤回一条已经显示的系统消息。
+
 ## 七、MCDReforged 部署
 
 Compat Login 不是 MCDR 插件，应放入 Fabric 服务端的 `mods` 目录。MCDR 只负责启动进程、读取日志和管理服务器。

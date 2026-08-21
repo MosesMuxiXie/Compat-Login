@@ -3,6 +3,9 @@
 	"package": "cn.compatlogin.mixin",
 	"compatibilityLevel": "JAVA_8",
 	"mixins": [
+		"CommandsMixin",
+		"MinecraftServerMixin",
+		"PlayerListAccessor",
 		"YggdrasilMinecraftSessionServiceMixin"
 	],
 	"injectors": {

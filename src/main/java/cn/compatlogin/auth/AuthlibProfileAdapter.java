@@ -65,6 +65,14 @@ public final class AuthlibProfileAdapter {
         }
     }
 
+    public static UUID readProfileId(Object gameProfile) {
+        try {
+            return (UUID) invokeAccessor(gameProfile, "getId", "id");
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Cannot read the player UUID from an authlib GameProfile", unwrap(exception));
+        }
+    }
+
     public static void throwAuthenticationUnavailable(AuthenticationServiceUnavailableException cause) {
         Throwable authlibException;
         try {
