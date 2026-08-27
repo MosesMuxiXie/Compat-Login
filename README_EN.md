@@ -50,9 +50,9 @@ GitHub Actions starts real servers with Fabric Loader `0.19.3` for the following
 
 These versions cover the main Java and authlib API boundaries. Other stable releases inside a line's metadata range use that line's JAR.
 
-### Version branches
+### Release process
 
-The repository keeps a `minecraft/<version>` branch for every stable release in the supported range, for example `minecraft/1.16`, `minecraft/1.20.6`, and `minecraft/26.2`. These branches are version entry points to the same tested core source, not separate incompatible implementations. Normal downloads and releases still come from `main` and GitHub Releases.
+The repository is maintained on a single `main` branch. Every version's artifacts (two JARs) are published through GitHub Releases and tagged `v*` (historical version tags use the `mc-*` or `v*` format).
 
 ## 1. Create a Fabric server from scratch
 

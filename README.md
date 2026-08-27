@@ -50,9 +50,9 @@ GitHub Actions 会使用 Fabric Loader `0.19.3` 实际启动以下关键版本�
 
 这些版本覆盖 Java 与 authlib 接口变更的主要边界。同一条线内其他位于元数据范围中的正式版使用该线的同一个 JAR。
 
-### 版本分支
+### 版本发布
 
-仓库为支持范围内的每个正式版保留一个 `minecraft/<版本号>` 分支，例如 `minecraft/1.16`、`minecraft/1.20.6` 和 `minecraft/26.2`。这些分支是同一套已验证核心源码的版本入口，不是互不兼容的多套实现；正常下载和发布仍以 `main` 及 GitHub Releases 为准。
+仓库以单一 `main` 分支维护，每个版本的发布物（两个 JAR）通过 GitHub Releases 发布；按版本打 `v*` 标签（历史版本标签为 `mc-*` 或 `v*` 格式）。
 
 ## 一、从零创建 Fabric 服务器
 
