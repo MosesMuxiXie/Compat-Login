@@ -1,10 +1,9 @@
 package cn.compatlogin.migration;
 
 import cn.compatlogin.CompatLogin;
-import cn.compatlogin.auth.AuthlibProfileAdapter;
-import com.google.gson.Gson;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -13,11 +12,15 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 final class ServerCommandBridge {
-    private static final Gson GSON = new Gson();
-
     private ServerCommandBridge() {
     }
 
+    /**
+     * Runs a command through the vanilla dispatcher. On Minecraft 1.19+ {@code performPrefixedCommand}
+     * returns void, so the result no longer reports whether the command actually worked; treat the
+     * return value as best-effort only. Player messaging and disconnects therefore use the direct
+     * APIs in this class instead of commands.
+     */
     static boolean execute(MinecraftServer server, String command) {
         Object commands = server.getCommands();
         Object source = server.createCommandSourceStack();
@@ -44,23 +47,38 @@ final class ServerCommandBridge {
         return false;
     }
 
+    /**
+     * Disconnects a player through the direct connection API. Whether the disconnect actually
+     * completed is verified asynchronously by the migration state machine (the target must be
+     * observed offline before any player data is touched).
+     */
+    static void disconnect(MinecraftServer server, ServerPlayer player, String reason) {
+        player.connection.disconnect(MinecraftTextBridge.literal(reason));
+    }
+
     static void reply(CommandSourceStack source, String message) {
         Entity entity = source.getEntity();
         if (entity instanceof ServerPlayer) {
-            tell(
-                source.getServer(),
-                AuthlibProfileAdapter.readProfileName(((ServerPlayer) entity).getGameProfile()),
-                message
-            );
+            tell((ServerPlayer) entity, message);
         } else {
             CompatLogin.LOGGER.info("[account migrate] {}", message);
         }
     }
 
-    static void tell(MinecraftServer server, String playerName, String message) {
-        String component = "{\"text\":" + GSON.toJson(message) + ",\"color\":\"yellow\"}";
-        if (!execute(server, "tellraw " + playerName + " " + component)) {
-            CompatLogin.LOGGER.warn("Could not deliver migration message to {}: {}", playerName, message);
+    static void tell(ServerPlayer player, String message) {
+        Component component;
+        try {
+            component = MinecraftTextBridge.literal(message);
+        } catch (RuntimeException | LinkageError failure) {
+            CompatLogin.LOGGER.warn(
+                "Cannot build a chat message for {}; the migration notice was dropped",
+                player.getUUID(),
+                failure
+            );
+            return;
+        }
+        if (!VersionBridge.sendSystemMessage(player, component)) {
+            CompatLogin.LOGGER.warn("Could not deliver migration message to {}: {}", player.getUUID(), message);
         }
     }
 

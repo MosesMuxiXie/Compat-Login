@@ -5,9 +5,6 @@ import cn.compatlogin.auth.AuthlibProfileAdapter;
 import cn.compatlogin.mixin.PlayerListAccessor;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
@@ -55,38 +52,20 @@ public final class MigrationManager {
     private MigrationManager() {
     }
 
+    /**
+     * Guards the /account migrate command with the server's own permission model instead of reading
+     * ops.json. Brigadier evaluates requires() whenever a command tree is sent (every player join),
+     * so this predicate must stay cheap and side-effect free. The permission API itself drifted
+     * across the supported range (hasPermission(int) was replaced by PermissionSet in 1.21.5+/26.x),
+     * which VersionBridge absorbs; non-player sources keep the old console/RCON name allowlist.
+     */
     public static boolean canBegin(CommandSourceStack source) {
         Entity entity = source.getEntity();
         if (!(entity instanceof ServerPlayer)) {
             String name = source.getTextName();
             return "Server".equalsIgnoreCase(name) || "Rcon".equalsIgnoreCase(name);
         }
-
-        Object profile = ((ServerPlayer) entity).getGameProfile();
-        UUID profileId = AuthlibProfileAdapter.readProfileId(profile);
-        Path opsFile = FabricLoader.getInstance().getGameDir().resolve("ops.json");
-        if (Files.notExists(opsFile)) {
-            return false;
-        }
-        try (Reader reader = Files.newBufferedReader(opsFile, StandardCharsets.UTF_8)) {
-            JsonElement root = new JsonParser().parse(reader);
-            if (!root.isJsonArray()) {
-                return false;
-            }
-            for (JsonElement element : root.getAsJsonArray()) {
-                if (!element.isJsonObject()) {
-                    continue;
-                }
-                JsonObject entry = element.getAsJsonObject();
-                UUID uuid = PlayerIdentityResolver.parseUuid(string(entry, "uuid"));
-                if (profileId.equals(uuid) && integer(entry, "level", 0) >= 3) {
-                    return true;
-                }
-            }
-        } catch (IOException | RuntimeException exception) {
-            CompatLogin.LOGGER.warn("Cannot read ops.json while checking /account migrate permission", exception);
-        }
-        return false;
+        return VersionBridge.hasCommandPermission(source);
     }
 
     public static synchronized int begin(CommandSourceStack commandSource, String from, String to) {
@@ -214,18 +193,11 @@ public final class MigrationManager {
 
             ServerCommandBridge.reply(commandSource,
                 "Migration confirmed. You will be disconnected while the server replaces the UUID data.");
-            boolean disconnected = ServerCommandBridge.execute(
-                commandSource.getServer(),
-                "kick " + session.targetName + " " + DISCONNECT_REASON
-            );
-            if (!disconnected) {
-                SESSIONS.remove(session);
-                persist();
-                ServerCommandBridge.reply(commandSource, "The disconnect failed, so no player data was changed.");
-                return 0;
-            }
+            // Disconnects are asynchronous, so success cannot be checked synchronously; the tick
+            // state machine below verifies the player actually left and rolls back on its deadline.
+            ServerCommandBridge.disconnect(commandSource.getServer(), player, DISCONNECT_REASON);
             CompatLogin.LOGGER.info(
-                "Migration code {} confirmed by target {} ({}); waiting for disconnect",
+                "Migration code {} confirmed by target {} ({}); disconnect dispatched, waiting for the player to leave",
                 session.code,
                 session.targetName,
                 session.targetUuid
@@ -262,7 +234,7 @@ public final class MigrationManager {
                         || (session.confirmationExpiresAtMillis > 0 && now > session.confirmationExpiresAtMillis)) {
                         ServerPlayer target = findOnline(server, session.targetUuid());
                         if (target != null) {
-                            ServerCommandBridge.tell(server, session.targetName, "Migration request expired; no data was changed.");
+                            ServerCommandBridge.tell(target, "Migration request expired; no data was changed.");
                         }
                         CompatLogin.LOGGER.info("Migration code {} expired", session.code);
                         iterator.remove();
@@ -277,13 +249,11 @@ public final class MigrationManager {
                             now + CONFIRMATION_LIFETIME_MILLIS
                         );
                         ServerCommandBridge.tell(
-                            server,
-                            session.targetName,
+                            target,
                             "confirm migrate data from " + session.sourceName + " to this account?"
                         );
                         ServerCommandBridge.tell(
-                            server,
-                            session.targetName,
+                            target,
                             "If yes, enter /account migrate confirm " + session.code
                                 + " within 5 minutes. Otherwise ignore this message."
                         );
@@ -443,16 +413,19 @@ public final class MigrationManager {
         if (session.unbanAtMillis <= 0L) {
             return;
         }
-        boolean commandSucceeded = ServerCommandBridge.execute(server, "pardon " + session.targetName);
-        if (!commandSucceeded) {
-            CompatLogin.LOGGER.warn(
-                "Could not confirm removal of the legacy migration ban for {} ({}); check the vanilla ban list",
+        // Best-effort only: on Minecraft 1.19+ the dispatcher's result no longer reports whether
+        // the command worked, so this cannot be verified synchronously. Modern sessions never set
+        // unbanAtMillis; this path only cleans up bans written by pre-login-lock versions.
+        boolean reportedSuccess = ServerCommandBridge.execute(server, "pardon " + session.targetName);
+        if (reportedSuccess) {
+            CompatLogin.LOGGER.info(
+                "Issued pardon for the legacy temporary migration ban for {} ({})",
                 session.targetName,
                 session.targetUuid
             );
         } else {
-            CompatLogin.LOGGER.info(
-                "Removed the legacy temporary migration ban for {} ({})",
+            CompatLogin.LOGGER.warn(
+                "Pardon command for the legacy migration ban of {} ({}) reported failure; check the vanilla ban list",
                 session.targetName,
                 session.targetUuid
             );
@@ -518,8 +491,11 @@ public final class MigrationManager {
 
     private static void notifyRequester(MinecraftServer server, MigrationSession session, String message) {
         CompatLogin.LOGGER.info("[account migrate] {}", message);
-        if (commandSafe(session.requestedBy) && findOnlineByName(server, session.requestedBy) != null) {
-            ServerCommandBridge.tell(server, session.requestedBy, message);
+        if (commandSafe(session.requestedBy)) {
+            ServerPlayer requester = findOnlineByName(server, session.requestedBy);
+            if (requester != null) {
+                ServerCommandBridge.tell(requester, message);
+            }
         }
     }
 
@@ -597,16 +573,6 @@ public final class MigrationManager {
         } catch (IOException ignored) {
             Files.move(temporary, storePath, StandardCopyOption.REPLACE_EXISTING);
         }
-    }
-
-    private static String string(JsonObject object, String key) {
-        JsonElement value = object.get(key);
-        return value == null || value.isJsonNull() ? null : value.getAsString();
-    }
-
-    private static int integer(JsonObject object, String key, int fallback) {
-        JsonElement value = object.get(key);
-        return value == null || value.isJsonNull() ? fallback : value.getAsInt();
     }
 
     private static final class StoreFile {
