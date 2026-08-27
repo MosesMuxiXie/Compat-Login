@@ -30,6 +30,11 @@ public final class ConfigValidator {
 
         validateRange(issues, "authentication.connectTimeoutSeconds", authentication.connectTimeoutSeconds, 1, 30);
         validateRange(issues, "authentication.requestTimeoutSeconds", authentication.requestTimeoutSeconds, 1, 60);
+        validateRange(issues, "authentication.overallTimeoutSeconds", authentication.overallTimeoutSeconds, 1, 120);
+        if (authentication.overallTimeoutSeconds < authentication.connectTimeoutSeconds) {
+            issues.add("authentication.overallTimeoutSeconds: must be at least connectTimeoutSeconds ("
+                + authentication.connectTimeoutSeconds + "); otherwise providers cannot even connect");
+        }
         validateRange(issues, "authentication.maxResponseBytes", authentication.maxResponseBytes, 1_024, 4_194_304);
 
         if (authentication.services == null || authentication.services.isEmpty()) {

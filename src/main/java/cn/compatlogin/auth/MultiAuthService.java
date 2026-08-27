@@ -25,20 +25,35 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class MultiAuthService {
     private static final long WARNING_INTERVAL_NANOS = 30L * 1_000_000_000L;
     private static final String USER_AGENT = "Compat-Login/" + modVersion();
+    /** Runs the parallel provider queries; daemon threads so a server shutdown is never delayed. */
+    private static final ExecutorService AUTH_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
+        Thread thread = new Thread(runnable, "Compat Login Auth");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final int connectTimeoutMillis;
     private final int requestTimeoutMillis;
+    private final int overallTimeoutMillis;
     private final int maxResponseBytes;
     private final List<Provider> providers;
 
     public MultiAuthService(CompatLoginConfig.Authentication config) {
         this.connectTimeoutMillis = config.connectTimeoutSeconds * 1_000;
         this.requestTimeoutMillis = config.requestTimeoutSeconds * 1_000;
+        this.overallTimeoutMillis = config.overallTimeoutSeconds * 1_000;
         this.maxResponseBytes = config.maxResponseBytes;
 
         List<Provider> enabledProviders = new ArrayList<Provider>();
@@ -61,36 +76,89 @@ public final class MultiAuthService {
 
     public AuthenticatedProfile hasJoinedServer(String username, String serverId, InetAddress address)
         throws AuthenticationServiceUnavailableException {
-        List<String> failures = new ArrayList<String>();
-        for (Provider provider : providers) {
-            if (Thread.currentThread().isInterrupted()) {
-                throw new AuthenticationServiceUnavailableException("Authentication request was interrupted");
-            }
+        if (Thread.currentThread().isInterrupted()) {
+            throw new AuthenticationServiceUnavailableException("Authentication request was interrupted");
+        }
 
-            try {
-                AuthenticatedProfile result = query(provider, username, serverId, address);
-                if (result != null) {
+        // All providers are queried in parallel so one slow or unreachable provider (e.g. Mojang
+        // from China) cannot delay logins of every other provider's players. Each query still
+        // respects connectTimeout/requestTimeout; the whole wait is additionally capped by
+        // overallTimeout. The first success wins, which is safe because the serverId is single-use
+        // and only the provider the client actually joined returns a profile.
+        CompletionService<Outcome> completion = new ExecutorCompletionService<Outcome>(AUTH_EXECUTOR);
+        List<Future<Outcome>> futures = new ArrayList<Future<Outcome>>();
+        for (Provider provider : providers) {
+            futures.add(completion.submit(() -> queryOutcome(provider, username, serverId, address)));
+        }
+
+        List<String> failures = new ArrayList<String>();
+        long deadline = System.currentTimeMillis() + overallTimeoutMillis;
+        int received = 0;
+        try {
+            while (received < futures.size()) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    break;
+                }
+                Future<Outcome> done = completion.poll(remaining, TimeUnit.MILLISECONDS);
+                if (done == null) {
+                    break;
+                }
+                received++;
+                Outcome outcome;
+                try {
+                    outcome = done.get();
+                } catch (ExecutionException failure) {
+                    Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+                    throw new IllegalStateException("Unexpected authentication failure", cause);
+                }
+                if (outcome.profile != null) {
                     CompatLogin.LOGGER.info(
                         "Authenticated {} ({}) via {}",
-                        result.getName(),
-                        result.getId(),
-                        provider.name
+                        outcome.profile.getName(),
+                        outcome.profile.getId(),
+                        outcome.providerName
                     );
-                    return result;
+                    return outcome.profile;
                 }
-            } catch (IOException | IllegalArgumentException | JsonParseException exception) {
-                String reason = readableMessage(exception);
-                failures.add(provider.name + ": " + reason);
-                logProviderWarning(provider, reason);
+                if (outcome.failure != null) {
+                    failures.add(outcome.providerName + ": " + outcome.failure);
+                }
+            }
+        } catch (InterruptedException interruption) {
+            Thread.currentThread().interrupt();
+            throw new AuthenticationServiceUnavailableException("Authentication request was interrupted");
+        } finally {
+            // Loser queries are not interruptible mid-read; they finish on their own timeouts in
+            // the pool and their results are discarded. Cancelling still frees queued tasks.
+            for (Future<Outcome> future : futures) {
+                future.cancel(true);
             }
         }
 
+        if (received < futures.size()) {
+            throw new AuthenticationServiceUnavailableException(
+                "Authentication did not finish within authentication.overallTimeoutSeconds ("
+                    + (overallTimeoutMillis / 1_000) + "s)"
+            );
+        }
         if (!failures.isEmpty()) {
             throw new AuthenticationServiceUnavailableException(
                 "One or more configured authentication services were unavailable: " + join(failures)
             );
         }
         return null;
+    }
+
+    private Outcome queryOutcome(Provider provider, String username, String serverId, InetAddress address) {
+        try {
+            AuthenticatedProfile profile = query(provider, username, serverId, address);
+            return profile == null ? Outcome.miss() : Outcome.success(provider.name, profile);
+        } catch (IOException | IllegalArgumentException | JsonParseException exception) {
+            String reason = readableMessage(exception);
+            logProviderWarning(provider, reason);
+            return Outcome.failure(provider.name, reason);
+        }
     }
 
     private AuthenticatedProfile query(Provider provider, String username, String serverId, InetAddress address)
@@ -285,6 +353,31 @@ public final class MultiAuthService {
     private static String readableMessage(Exception exception) {
         String message = exception.getMessage();
         return isBlank(message) ? exception.getClass().getSimpleName() : message;
+    }
+
+    /** The result of one provider query: either a profile, a rejection, or a transport failure. */
+    private static final class Outcome {
+        final String providerName;
+        final AuthenticatedProfile profile;
+        final String failure;
+
+        private Outcome(String providerName, AuthenticatedProfile profile, String failure) {
+            this.providerName = providerName;
+            this.profile = profile;
+            this.failure = failure;
+        }
+
+        static Outcome success(String providerName, AuthenticatedProfile profile) {
+            return new Outcome(providerName, profile, null);
+        }
+
+        static Outcome miss() {
+            return new Outcome(null, null, null);
+        }
+
+        static Outcome failure(String providerName, String failure) {
+            return new Outcome(providerName, null, failure);
+        }
     }
 
     private static final class Provider {

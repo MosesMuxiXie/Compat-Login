@@ -48,6 +48,8 @@ public final class CompatLoginConfig {
     public static final class Authentication {
         public int connectTimeoutSeconds = 5;
         public int requestTimeoutSeconds = 8;
+        /** Upper bound on one whole hasJoined verification across every enabled provider. */
+        public int overallTimeoutSeconds = 13;
         public int maxResponseBytes = 1_048_576;
         public boolean allowInsecureHttp = false;
         public List<Service> services = new ArrayList<>();

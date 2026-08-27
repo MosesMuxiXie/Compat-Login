@@ -11,7 +11,7 @@
 
 核心能力：
 
-- **多身份源鉴权**：替换原版 `YggdrasilMinecraftSessionService.hasJoinedServer`，按配置顺序查询所有启用 provider，任一命中即放行；配置位于 `config/compat_login.json`（首次启动自动生成，含 Mojang 与 LittleSkin 两个默认服务）。
+- **多身份源鉴权**：替换原版 `YggdrasilMinecraftSessionService.hasJoinedServer`，**并行**查询所有启用 provider，任一命中即放行（首个成功即返回，整体等待由 `overallTimeoutSeconds` 兜底）；配置位于 `config/compat_login.json`（首次启动自动生成，含 Mojang 与 LittleSkin 两个默认服务）。
 - **安全护栏**：启动时强制校验 `server.properties` 的 `online-mode=true`（否则拒绝启动）；检测到服务端 authlib-injector 时进入兼容模式；配置文件非法时拒绝启动且不覆盖原文件。
 - **`/account migrate` 玩家数据迁移**：管理员发起一次性确认码，目标账号上线确认后自动踢出、锁定目标登录、把 `playerdata/advancements/stats/usercache` 中源 UUID 改写为目标 UUID，全程带备份与回滚（事务式）。
 - **跨版本兼容**：同一套源码产出两个 JAR，覆盖 Minecraft 1.16–1.21.11（重映射 intermediary、Java 8 字节码）与 26.1–26.2（官方名、Java 25 字节码），authlib 2.x/6+/7+ 的 `GameProfile`/`ProfileResult` 差异用反射桥接。
@@ -110,13 +110,22 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 - 移除 `MigrationManager` 中 ops.json 解析相关的 Gson import 与 `string/integer` 辅助方法。
 - **验证**：`gradlew build` 全绿（两线编译、32 个单元测试、`verifyJava8Bytecode`、`collectReleaseJars` 均通过）；已抽查两个 JAR 字节码：旧线 `ServerCommandBridge` 正确引用 `field_13987`/`method_14367`，`VersionBridge` 常量池含全部预期 intermediary 名；新线保留官方名。**未做**真实服务器运行验证（沙箱限制 + smoke 不覆盖这些路径，见第 4 节第 9 条）。
 
+### 3.3 本轮（鉴权并行化）
+
+- **`MultiAuthService.hasJoinedServer` 改为并行查询**：所有启用 provider 同时查询，首个返回有效档案的成功即返回，其余取消（残余查询在池线程里自然超时丢弃）。超时预算从"N 个 provider 叠加"变为"重叠"：最坏总等待 = 单个 provider 的最长预算，不再 13s×N。安全依据：Yggdrasil `hasJoined` 的 `serverId` 是一次性的，至多一个身份源能返回档案，并行无认领竞态。
+- **共享 4 线程 daemon 池**（`AUTH_EXECUTOR`，线程名 "Compat Login Auth"）；单 provider 也走同一路径（行为统一、总超时同样生效）；意外 RuntimeException 经 `ExecutionException` 重新抛出，保持原有"未预期失败向上传播"语义；失败聚合、30s 节流告警、`AuthenticationServiceUnavailableException` 文案与原先一致。
+- **新增配置 `authentication.overallTimeoutSeconds`**（默认 13 = 5+8）：一次登录验证的总等待上限；校验范围 1–120 且不得小于 `connectTimeoutSeconds`；超时且仍有查询在途时抛"did not finish within overallTimeoutSeconds"，不误报"用户不存在"。
+- **测试**：`MultiAuthServiceTest` 扩到 6 个用例（HttpServer 配并发 executor），覆盖：并行不等待最慢源（计时断言）、单 provider、全拒绝、部分失败聚合、overall 超时截断。
+- **文档**：中英文 README 的默认配置 JSON、配置项表、查询语义段落、排错清单全部同步。
+- **方案 C（熔断跳过失效源）评估后不做**：并行之后"降优先级"无意义，而"临时跳过失效源"会让该源恢复后的一段时间内其玩家无法登录（fail-open 语义倒退），风险大于收益，记于此备查。
+- **方案 B（登录鉴权整体异步化）**：见第 4 节"可选功能（未来工作）"。
+
 ## 4. 遗留问题与潜在隐患（全部）
 
 ### 高优先级
 
-1. **鉴权 provider 串行查询、超时叠加**（`MultiAuthService.hasJoinedServer`）：默认 Mojang 在前，其超时（连接 5s + 请求 8s）会先于 LittleSkin 消耗；N 个 provider 最坏 13s×N，发生在登录流程线程上，拖慢每个玩家入服。**建议**：多 provider 并行查询 + 整体 deadline，首个成功即返回并取消其余。
-2. **迁移文件事务跑在服务器主线程 tick 内**（`MinecraftServerMixin.tickServer` TAIL → `MigrationManager.tick` → `MigrationFileService.migrate`）：单文件上限 64MB，解压+改写+回压+多文件复制可能秒级卡顿；且 `tick`/`isLoginLocked` 等全是类级 `synchronized`，大迁移期间登录锁检查也会被阻塞。**建议**：tick 只切状态（主线程），文件事务扔专用 worker（`CompletableFuture`），tick 每轮 `isDone()` 轮询结果；会话以不可变快照传给 worker。
-3. **崩溃中断迁移的恢复边界**（`MigrationManager.tick` 里 `state=MIGRATING; persist(); migrate()` 的次序）：
+1. **迁移文件事务跑在服务器主线程 tick 内**（`MinecraftServerMixin.tickServer` TAIL → `MigrationManager.tick` → `MigrationFileService.migrate`）：单文件上限 64MB，解压+改写+回压+多文件复制可能秒级卡顿；且 `tick`/`isLoginLocked` 等全是类级 `synchronized`，大迁移期间登录锁检查也会被阻塞。**建议**：tick 只切状态（主线程），文件事务扔专用 worker（`CompletableFuture`），tick 每轮 `isDone()` 轮询结果；会话以不可变快照传给 worker。
+2. **崩溃中断迁移的恢复边界**（`MigrationManager.tick` 里 `state=MIGRATING; persist(); migrate()` 的次序）：
    - 崩溃后重启会重跑 `migrate()`，已提交文件因源已删被跳过，多数情况收敛正确；
    - 但若崩溃发生在"全部文件已提交、`state=COMPLETED` 未持久化"窗口，重跑时 `changedAnyPlayerFile=false` 抛异常 → 误报"failed and rolled back"，**数据其实已迁移且未回滚**，误导管理员；
    - 同理，源账号本无任何数据时也会走同一条异常路径，提示语错误。
@@ -124,32 +133,33 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 
 ### 中优先级
 
-4. **`compat_login.mixins.json` 的 `compatibilityLevel: JAVA_8` 与 26.2 线 Java 25 字节码不一致**：目前 Mixin 能跑通但属隐性依赖。**建议**：像 `fabric.mod.json` 一样按线模板化（新线 `JAVA_25`；若捆绑 Mixin 不支持该枚举就取最高可用值，smoke 测试兜底）。
-5. **反射未缓存**：`ServerCommandBridge.execute` 每次调用都 `getMethods()` 全量扫描（现仅 pardon 用，影响小）；`AuthlibProfileAdapter` 每次登录都反射构造 GameProfile/PropertyMap。**建议**：首次解析后缓存 static final，失败降级。
-6. **`StoreFile.schemaVersion` 写入但加载时从不校验**（`MigrationManager.ensureLoaded`）：未来 schema 升级时旧文件会被静默按新结构解析。**建议**：加载时校验版本，不符则拒绝或显式迁移。
-7. **`smoke-test-server.sh` 不支持超时参数**（硬编码 `timeout_seconds:-300`），与 PS1 版不对等；本机 1.16.5 实测需 264s，CI 冷启动 + JAR 下载可能吃满 300s（job 级 10 分钟兜底）。**建议**：`.sh` 加第 5 参数并让 CI 显式传 420。
-8. **CI 矩阵是抽样而非全版本**：旧线跳过了 1.19.3、1.20.2、1.20.5 等签名断点版本；当前 14 个抽样点均实测通过，但 README 应注明"抽样验证，同线内其他版本用同一 JAR、按需自查"。
-9. **本轮改动的运行时路径没有自动化验证**：`canBegin`/`tell`/`disconnect` 只在真实玩家交互时执行，smoke 测试没有玩家进服，覆盖不到；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果），并把"权限 API 变更时更新 VersionBridge"写进发布检查单。
+3. **`compat_login.mixins.json` 的 `compatibilityLevel: JAVA_8` 与 26.2 线 Java 25 字节码不一致**：目前 Mixin 能跑通但属隐性依赖。**建议**：像 `fabric.mod.json` 一样按线模板化（新线 `JAVA_25`；若捆绑 Mixin 不支持该枚举就取最高可用值，smoke 测试兜底）。
+4. **反射未缓存**：`ServerCommandBridge.execute` 每次调用都 `getMethods()` 全量扫描（现仅 pardon 用，影响小）；`AuthlibProfileAdapter` 每次登录都反射构造 GameProfile/PropertyMap。**建议**：首次解析后缓存 static final，失败降级。
+5. **`StoreFile.schemaVersion` 写入但加载时从不校验**（`MigrationManager.ensureLoaded`）：未来 schema 升级时旧文件会被静默按新结构解析。**建议**：加载时校验版本，不符则拒绝或显式迁移。
+6. **`smoke-test-server.sh` 不支持超时参数**（硬编码 `timeout_seconds:-300`），与 PS1 版不对等；本机 1.16.5 实测需 264s，CI 冷启动 + JAR 下载可能吃满 300s（job 级 10 分钟兜底）。**建议**：`.sh` 加第 5 参数并让 CI 显式传 420。
+7. **CI 矩阵是抽样而非全版本**：旧线跳过了 1.19.3、1.20.2、1.20.5 等签名断点版本；当前 14 个抽样点均实测通过，但 README 应注明"抽样验证，同线内其他版本用同一 JAR、按需自查"。
+8. **运行时交互路径没有自动化验证**：`canBegin`/`tell`/`disconnect`（VersionBridge 三路）与鉴权并行路径都只在真实玩家交互时执行，smoke 测试没有玩家进服，覆盖不到；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果），并把"权限 API 变更时更新 VersionBridge"写进发布检查单。
 
 ### 低优先级 / 环境
 
-10. **仓库在 OneDrive 中文路径**（`D:\OneDrive\文档\javaprojects\...`）：Loom 每次构建警告，曾出现 `test-results/binary` 被占用导致 Gradle 删除失败，本轮还遇到过编辑文件被外部改动（疑似 OneDrive 同步）触发"file changed since read"。**建议**：整体迁移到本地 ASCII 路径。
-11. **`%USERPROFILE%\.gradle` 约 9.3GB**：可在停掉守护进程后清理（尚未动）。
-12. **git 状态**：上一轮的全部改动 + 本轮的权限/命令桥改动**均未提交**，建议尽快提交建立基线。
-13. 次要代码点：
+9. **仓库在 OneDrive 中文路径**（`D:\OneDrive\文档\javaprojects\...`）：Loom 每次构建警告，曾出现 `test-results/binary` 被占用导致 Gradle 删除失败，还频繁遇到编辑文件被外部改动（疑似 OneDrive 同步）触发"file changed since read"。**建议**：整体迁移到本地 ASCII 路径。
+10. **`%USERPROFILE%\.gradle` 约 9.3GB**：可在停掉守护进程后清理（尚未动）。
+11. 次要代码点：
     - `notifyRequester` 按玩家名在线查找，请求者改名后收不到完成通知（日志仍完整，可接受）。
     - `confirm` 的 catch 会把 `disconnect()` 中文本桥构造失败（理论上仅发生在不受支持版本）也归入"Cannot confirm"提示，属可接受降级。
     - `tick` 中每 250ms 对每个 `waiting_for_disconnect` 会话调用 `findOnline` 线性扫描在线列表，会话数小、无实际影响。
     - `-Dfile.encoding=COMPAT` 需 JDK 18+ 运行 Gradle 守护进程（JEP 400 后才识别该值）；目前 Loom 1.17 本身要求较新 JDK 所以无实际风险，但 `gradle.properties` 注释未写明前提，建议补一句。
 
-### 可选功能（未实现）
+### 可选功能（未实现 / 未来工作）
 
+- **登录鉴权整体异步化（方案 B，MultiLogin 路线）**：目前并行化已把登录等待压到单 provider 预算（默认 13s 上限），但登录流程线程仍然同步阻塞这段时间。彻底解法是把 `hasJoinedServer` 的执行挪出登录线程（在 `LoginListener` 等更上层挂钩、登录挂起等待结果），需要新增跨 1.16–26.2 的 Mixin 目标与签名桥，改动面大；列为未来课题。
 - `/account migrate list|status`：让管理员查看未决会话。
 - 迁移完成后把 `backupPath` 通过命令回复给请求者（目前只进日志）。
 - 迁移 `playerdata` 改写之外的关联数据（如实体 NBT 中对玩家 UUID 的引用）不在范围内，README 已建议按 UUID 管理权限/封禁/白名单。
 
 ### 已解决（本文件存在之前的记录）
 
+- ~~鉴权 provider 串行查询、超时叠加（13s×N）~~ → 并行查询 + `overallTimeoutSeconds` 总兜底（3.3）。
 - ~~登录锁文本 `static final` 引发 `ExceptionInInitializerError`~~ → 惰性构造 + 失败放行（3.1）。
 - ~~迁移命令按名字解析取第一个匹配~~ → 全量收集 + 歧义拒绝（3.1）。
 - ~~`requires` 每次进服读 `ops.json`~~ → 名字白名单 + `VersionBridge` 权限桥（3.2）。

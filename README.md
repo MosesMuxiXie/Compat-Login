@@ -263,6 +263,7 @@ config\compat_login.json
   "authentication": {
     "connectTimeoutSeconds": 5,
     "requestTimeoutSeconds": 8,
+    "overallTimeoutSeconds": 13,
     "maxResponseBytes": 1048576,
     "allowInsecureHttp": false,
     "services": [
@@ -289,7 +290,8 @@ config\compat_login.json
 | --- | --- | --- |
 | `schemaVersion` | 配置格式版本 | 当前必须为 `1` |
 | `connectTimeoutSeconds` | 建立连接超时 | `1` 到 `30` 秒 |
-| `requestTimeoutSeconds` | 响应读取超时 | `1` 到 `60` 秒 |
+| `requestTimeoutSeconds` | 单个身份源的响应读取超时 | `1` 到 `60` 秒 |
+| `overallTimeoutSeconds` | 一次登录验证（所有身份源并行查询）的总等待上限 | `1` 到 `120` 秒，且不得小于 `connectTimeoutSeconds` |
 | `maxResponseBytes` | 单个验证响应最大长度 | `1024` 到 `4194304` 字节 |
 | `allowInsecureHttp` | 是否允许明文 HTTP | 公网身份源必须保持 `false` |
 | `services` | 按顺序查询的身份源列表 | 至少有一个 `enabled=true` |
@@ -297,7 +299,7 @@ config\compat_login.json
 | `services[].enabled` | 是否启用该身份源 | 必须为 `true` 或 `false` |
 | `services[].hasJoinedUrl` | Yggdrasil API 根地址或完整验证接口 | 必须是可信 HTTP(S) URL |
 
-查询顺序就是 `services` 数组顺序。第一个返回有效档案的身份源通过认证。
+所有启用的身份源被**并行**查询，第一个返回有效档案的身份源通过认证；`services` 数组顺序只影响日志与告警中的排列。某个身份源不可达不会拖慢其他身份源玩家的登录，整次验证的等待上限由 `overallTimeoutSeconds` 兜底。
 
 ### 第 12 步：填写认证地址
 
@@ -550,7 +552,7 @@ online-mode=true
 2. URL 是否为正确的 Yggdrasil API 根地址；
 3. DNS、防火墙、代理和 HTTPS 证书是否正常；
 4. 身份源本身是否宕机；
-5. `connectTimeoutSeconds` 和 `requestTimeoutSeconds` 是否过短。
+5. `connectTimeoutSeconds`、`requestTimeoutSeconds` 和 `overallTimeoutSeconds` 是否过短。
 
 为了安全，只要某个身份源请求异常，并且本次登录也没有在其他来源成功匹配，模组会将它作为认证服务不可用处理，而不是静默放行。
 

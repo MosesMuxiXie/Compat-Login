@@ -263,6 +263,7 @@ Default contents:
   "authentication": {
     "connectTimeoutSeconds": 5,
     "requestTimeoutSeconds": 8,
+    "overallTimeoutSeconds": 13,
     "maxResponseBytes": 1048576,
     "allowInsecureHttp": false,
     "services": [
@@ -289,7 +290,8 @@ The default configuration accepts both Mojang / Microsoft players and LittleSkin
 | --- | --- | --- |
 | `schemaVersion` | configuration format version | must currently be `1` |
 | `connectTimeoutSeconds` | connection timeout | `1` through `30` seconds |
-| `requestTimeoutSeconds` | response read timeout | `1` through `60` seconds |
+| `requestTimeoutSeconds` | per-provider response read timeout | `1` through `60` seconds |
+| `overallTimeoutSeconds` | total wait cap for one login verification across all providers | `1` through `120` seconds, at least `connectTimeoutSeconds` |
 | `maxResponseBytes` | maximum size of one authentication response | `1024` through `4194304` bytes |
 | `allowInsecureHttp` | permits unencrypted HTTP | keep `false` for public identity providers |
 | `services` | ordered identity-provider list | at least one service must have `enabled=true` |
@@ -297,7 +299,7 @@ The default configuration accepts both Mojang / Microsoft players and LittleSkin
 | `services[].enabled` | enables the provider | must be `true` or `false` |
 | `services[].hasJoinedUrl` | Yggdrasil API root or complete verification endpoint | must be a trusted HTTP(S) URL |
 
-Providers are queried in the order listed in `services`. The first provider that returns a valid profile authenticates the player.
+Every enabled provider is queried **in parallel**; the first provider that returns a valid profile authenticates the player. The `services` order only affects log and warning ordering. An unreachable provider no longer delays other providers' players, and `overallTimeoutSeconds` caps the whole verification.
 
 ### Step 12: Set authentication endpoints
 
@@ -550,7 +552,7 @@ Check the following:
 2. Is the URL a valid Yggdrasil API root?
 3. Are DNS, firewall, proxy, and HTTPS certificates working?
 4. Is the identity provider itself online?
-5. Are `connectTimeoutSeconds` and `requestTimeoutSeconds` too short?
+5. Are `connectTimeoutSeconds`, `requestTimeoutSeconds` and `overallTimeoutSeconds` too short?
 
 For security, if a provider request fails and no other provider successfully matches the login, the mod reports the authentication service as unavailable instead of silently allowing access.
 
