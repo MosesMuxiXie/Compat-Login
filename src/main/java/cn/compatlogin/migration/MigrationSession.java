@@ -20,6 +20,7 @@ final class MigrationSession {
     long promptedAtMillis;
     long confirmationExpiresAtMillis;
     long disconnectDeadlineMillis;
+    /** Kept only to detect and clean up migration bans written by versions before the UUID login lock. */
     long unbanAtMillis;
     String backupPath;
 

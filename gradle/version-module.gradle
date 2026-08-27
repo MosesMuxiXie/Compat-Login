@@ -1,0 +1,69 @@
+// Shared configuration for every versions/<highest supported release> module.
+// Each module applies its own Loom flavour first, then sets the ext properties this script reads:
+//   minecraftDependency - fabric.mod.json range for the JAR
+//   javaDependency      - fabric.mod.json Java range for the JAR
+//   javaRelease         - bytecode level of the mod itself
+//   testJavaRelease     - bytecode level of the shared unit tests
+
+base {
+	archivesName = "${rootProject.name}-${project.name}"
+}
+
+loom {
+	mods {
+		"compat_login" {
+			sourceSet sourceSets.main
+		}
+	}
+}
+
+sourceSets {
+	main {
+		java.srcDir rootProject.file('src/main/java')
+		resources.srcDir rootProject.file('src/main/resources')
+	}
+	test {
+		java.srcDir rootProject.file('src/test/java')
+	}
+}
+
+dependencies {
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.12.2'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.12.2'
+}
+
+test {
+	useJUnitPlatform()
+}
+
+processResources {
+	inputs.property 'version', project.version
+	inputs.property 'minecraft_dependency', project.minecraftDependency
+	inputs.property 'java_dependency', project.javaDependency
+
+	filesMatching('fabric.mod.json') {
+		expand(
+			'version': project.version,
+			'minecraft_dependency': project.minecraftDependency,
+			'java_dependency': project.javaDependency
+		)
+	}
+}
+
+tasks.named('compileJava', JavaCompile) {
+	options.release = project.javaRelease
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+	options.release = project.testJavaRelease
+}
+
+java {
+	withSourcesJar()
+}
+
+jar {
+	from(rootProject.file('LICENSE')) {
+		rename { "${it}_${rootProject.name}" }
+	}
+}

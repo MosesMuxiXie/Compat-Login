@@ -1,120 +1,43 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
-	id 'maven-publish'
+	id 'base'
+	// Declared here without applying so both version modules can pick the matching Loom flavour.
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
 }
 
-base {
-	archivesName = "compat_login-universal"
-}
+def releaseModules = [':versions:1.21.11', ':versions:26.2']
 
-repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
-}
+def collectReleaseJars = tasks.register('collectReleaseJars', Sync) {
+	group = 'build'
+	description = 'Collects one release JAR per supported Minecraft line into build/libs.'
 
-loom {
-	mods {
-		"compat_login" {
-			sourceSet sourceSets.main
-		}
+	from(releaseModules.collect { path -> project(path).layout.buildDirectory.dir('libs') }) {
+		include 'compat_login-*.jar'
+		exclude '*-sources.jar'
 	}
+	into layout.buildDirectory.dir('libs')
 
-	// Development-only integration hook. Normal builds do not add a Java Agent.
-	runs {
-		server {
-			if (project.hasProperty("compatLoginTestAuthlibInjector")) {
-				vmArg "-javaagent:${file(project.property("compatLoginTestAuthlibInjector")).absolutePath}=littleskin.cn"
-			}
-		}
-	}
-}
+	dependsOn releaseModules.collect { path -> "${path}:build" }
 
-dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings loom.officialMojangMappings()
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	testImplementation "org.junit.jupiter:junit-jupiter:5.12.2"
-	testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.12.2"
-}
-
-test {
-	useJUnitPlatform()
-}
-
-processResources {
-	def version = project.version
-	inputs.property "version", version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": version
-	}
-}
-
-tasks.named("compileJava", JavaCompile) {
-	it.options.release = 8
-}
-
-tasks.named("compileTestJava", JavaCompile) {
-	it.options.release = 21
-}
-
-java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
-	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_1_8
-	targetCompatibility = JavaVersion.VERSION_1_8
-}
-
-tasks.register("verifyJava8Bytecode") {
-	dependsOn classes
 	doLast {
-		sourceSets.main.output.classesDirs.files.each { directory ->
-			fileTree(directory).matching { include "**/*.class" }.files.each { classFile ->
-				classFile.withDataInputStream { input ->
-					def magic = input.readInt()
-					input.readUnsignedShort()
-					def major = input.readUnsignedShort()
-					if (magic != 0xCAFEBABE as int || major > 52) {
-						throw new GradleException("${classFile} is not Java 8 bytecode (major=${major})")
-					}
-				}
-			}
+		def jars = fileTree(destinationDir).matching { include '*.jar' }.files.sort { it.name }
+		if (jars.size() != releaseModules.size()) {
+			throw new GradleException("Expected ${releaseModules.size()} release JARs but collected ${jars.size()}")
 		}
+		jars.each { jar -> logger.lifecycle("Release artifact: ${jar.name}") }
 	}
 }
 
-check.dependsOn verifyJava8Bytecode
-
-jar {
-	def projectName = project.name
-	inputs.property "projectName", projectName
-
-	from("LICENSE") {
-		rename { "${it}_$projectName"}
-	}
+tasks.register('buildAllVersions') {
+	group = 'build'
+	description = 'Builds every supported Minecraft release artifact.'
+	dependsOn collectReleaseJars
 }
 
-// configure the maven publication
-publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			from components.java
-		}
-	}
+tasks.named('build') {
+	dependsOn collectReleaseJars
+}
 
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
-	}
+tasks.named('clean') {
+	dependsOn releaseModules.collect { path -> "${path}:clean" }
 }

@@ -1,0 +1,7 @@
+[22:35:10] [Test worker/INFO]: server.properties does not exist yet; Minecraft will create it with online-mode=true by default
+[22:35:10] [Test worker/WARN]: [WARNING] server.properties -> online-mode: must be true; otherwise every login bypasses authentication
+[22:35:11] [Test worker/INFO]: Authenticated Notch (069a79f4-44e9-4726-a5be-fca90e38aaf5) via Second
+[22:35:11] [Test worker/WARN]: [WARNING] config/compat_login.json -> authentication.services[0].hasJoinedUrl: replaced authlib-injector's temporary local Mojang proxy with the direct HTTPS endpoint
+[22:35:11] [Test worker/INFO]: Updated authlib-injector compatibility settings in D:\Temp\User\junit-6189351168623070497\compat_login.json; original configuration is backed up at D:\Temp\User\junit-6189351168623070497\compat_login.json.authlib-injector.bak
+[22:35:11] [Test worker/WARN]: [WARNING] config/compat_login.json -> schemaVersion: must be 1, but was 2
+[22:35:11] [Test worker/WARN]: [WARNING] Fix D:\Temp\User\junit-7828668106485871157\compat_login.json and restart the server; the invalid file was not overwritten

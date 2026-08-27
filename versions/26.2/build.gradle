@@ -1,0 +1,29 @@
+plugins {
+	// Loader 26.x ships unobfuscated Minecraft, so this line builds without remapping.
+	id 'net.fabricmc.fabric-loom'
+}
+
+ext {
+	minecraftDependency = ">=${project.modern_lowest_version} <=${project.name}"
+	javaDependency = project.modern_java_dependency
+	javaRelease = 25
+	testJavaRelease = 25
+}
+
+apply from: rootProject.file('gradle/version-module.gradle')
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.name}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+}
+
+tasks.named('compileJava', JavaCompile) {
+	doFirst {
+		def current = JavaVersion.current().majorVersion as int
+		if (current < project.javaRelease) {
+			throw new GradleException(
+				"versions/${project.name} needs JDK ${project.javaRelease} or newer; Gradle runs on JDK ${current}"
+			)
+		}
+	}
+}

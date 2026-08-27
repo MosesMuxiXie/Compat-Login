@@ -13,29 +13,68 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 final class PlayerIdentityResolver {
     private PlayerIdentityResolver() {
     }
 
-    static PlayerIdentity resolve(MinecraftServer server, Path serverRoot, String input) throws IOException {
+    static PlayerIdentity resolve(MinecraftServer server, Path serverRoot, String input)
+        throws IOException, AmbiguousPlayerNameException {
+        Path userCache = serverRoot.resolve("usercache.json");
         UUID requestedUuid = parseUuid(input);
-
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            Object profile = player.getGameProfile();
-            UUID profileId = AuthlibProfileAdapter.readProfileId(profile);
-            String profileName = AuthlibProfileAdapter.readProfileName(profile);
-            if ((requestedUuid != null && requestedUuid.equals(profileId))
-                || (profileName != null && profileName.equalsIgnoreCase(input))) {
-                return new PlayerIdentity(profileName, profileId);
+        if (requestedUuid != null) {
+            PlayerIdentity online = onlineByUuid(server, requestedUuid);
+            if (online != null) {
+                return online;
             }
+            List<PlayerIdentity> cached = fromUserCache(userCache, null, requestedUuid);
+            return cached.isEmpty() ? null : cached.get(0);
         }
 
-        Path userCache = serverRoot.resolve("usercache.json");
-        if (Files.notExists(userCache)) {
+        List<PlayerIdentity> matches = onlineByName(server, input);
+        for (PlayerIdentity cached : fromUserCache(userCache, input, null)) {
+            addUnique(matches, cached);
+        }
+        if (matches.isEmpty()) {
             return null;
+        }
+        if (matches.size() > 1) {
+            throw new AmbiguousPlayerNameException(input, matches);
+        }
+        return matches.get(0);
+    }
+
+    private static PlayerIdentity onlineByUuid(MinecraftServer server, UUID uuid) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            Object profile = player.getGameProfile();
+            if (uuid.equals(AuthlibProfileAdapter.readProfileId(profile))) {
+                return new PlayerIdentity(AuthlibProfileAdapter.readProfileName(profile), uuid);
+            }
+        }
+        return null;
+    }
+
+    private static List<PlayerIdentity> onlineByName(MinecraftServer server, String name) {
+        List<PlayerIdentity> matches = new ArrayList<PlayerIdentity>();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            Object profile = player.getGameProfile();
+            String profileName = AuthlibProfileAdapter.readProfileName(profile);
+            UUID profileId = AuthlibProfileAdapter.readProfileId(profile);
+            if (profileName != null && profileId != null && profileName.equalsIgnoreCase(name)) {
+                addUnique(matches, new PlayerIdentity(profileName, profileId));
+            }
+        }
+        return matches;
+    }
+
+    /** Returns every cached identity matching the requested name or UUID, at most one entry per UUID. */
+    static List<PlayerIdentity> fromUserCache(Path userCache, String name, UUID uuid) throws IOException {
+        List<PlayerIdentity> matches = new ArrayList<PlayerIdentity>();
+        if (Files.notExists(userCache)) {
+            return matches;
         }
 
         try (Reader reader = Files.newBufferedReader(userCache, StandardCharsets.UTF_8)) {
@@ -49,20 +88,29 @@ final class PlayerIdentityResolver {
                     continue;
                 }
                 JsonObject entry = element.getAsJsonObject();
-                String name = string(entry, "name");
-                UUID uuid = parseUuid(string(entry, "uuid"));
-                if (name == null || uuid == null) {
+                String entryName = string(entry, "name");
+                UUID entryUuid = parseUuid(string(entry, "uuid"));
+                if (entryName == null || entryUuid == null) {
                     continue;
                 }
-                if ((requestedUuid != null && requestedUuid.equals(uuid))
-                    || name.toLowerCase(Locale.ROOT).equals(input.toLowerCase(Locale.ROOT))) {
-                    return new PlayerIdentity(name, uuid);
+                if ((uuid != null && uuid.equals(entryUuid))
+                    || (name != null && entryName.equalsIgnoreCase(name))) {
+                    addUnique(matches, new PlayerIdentity(entryName, entryUuid));
                 }
             }
         } catch (RuntimeException exception) {
             throw new IOException("cannot parse usercache.json", exception);
         }
-        return null;
+        return matches;
+    }
+
+    private static void addUnique(List<PlayerIdentity> matches, PlayerIdentity candidate) {
+        for (PlayerIdentity known : matches) {
+            if (known.getUuid().equals(candidate.getUuid())) {
+                return;
+            }
+        }
+        matches.add(candidate);
     }
 
     private static String string(JsonObject object, String key) {

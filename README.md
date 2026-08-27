@@ -12,19 +12,24 @@ Compat Login 是一个只安装在服务端的 Fabric 模组。它让同一个 `
 
 ## 版本兼容性
 
-Compat Login `0.3.0` 开始使用一个通用 JAR 覆盖 Minecraft `1.16` 至 `26.2`：
+Compat Login `1.1.0` 按 Minecraft 的映射方式分成两个发布 JAR，每个 JAR 以自己支持的最高正式版命名：
 
 ```text
-compat_login-universal-0.3.1.jar
+compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.2-1.1.0.jar      # Minecraft 26.1 至 26.2
 ```
+
+Minecraft `26.1` 起官方发布不再混淆，Fabric Loader 也不再加载运行时映射，所以这条线必须单独构建。两个 JAR 使用完全相同的一套核心源码，只有映射方式和字节码级别不同。
 
 | 组件 | 支持范围 |
 | --- | --- |
-| Minecraft | `1.16` 至 `26.2` 正式版 |
+| Minecraft | `1.16` 至 `1.21.11`（旧映射线）、`26.1` 至 `26.2`（新版线） |
 | Fabric Loader | 最低 `0.18.4`，使用最新稳定版 `0.19.3` 验证 |
 | Fabric API | 不需要；可与整合包中已有的 Fabric API 共存 |
 | authlib-injector | 可选；已验证 `1.2.7` |
-| Compat Login | `0.3.1` |
+| Compat Login | `1.1.0` |
+
+服务器只安装与自身 Minecraft 版本对应的那一个 JAR，不要同时放入两个。
 
 Minecraft `26.3` 快照不在当前支持范围内。快照的类和方法会继续变化，应在对应正式版发布并通过启动测试后再扩大范围。
 
@@ -32,22 +37,22 @@ Minecraft `26.3` 快照不在当前支持范围内。快照的类和方法会继
 
 GitHub Actions 会使用 Fabric Loader `0.19.3` 实际启动以下关键版本，而不是只检查元数据：
 
-| Minecraft | Java |
-| --- | --- |
-| `1.16.5` | 8 |
-| `1.17.1` | 17 |
-| `1.18.2` | 17 |
-| `1.19.2`、`1.19.4` | 17 |
-| `1.20.1`、`1.20.4` | 17 |
-| `1.20.6` | 21 |
-| `1.21.1`、`1.21.4`、`1.21.8`、`1.21.11` | 21 |
-| `26.1.2`、`26.2` | 25 |
+| Minecraft | Java | 使用的 JAR |
+| --- | --- | --- |
+| `1.16.5` | 8 | `compat_login-1.21.11` |
+| `1.17.1` | 17 | `compat_login-1.21.11` |
+| `1.18.2` | 17 | `compat_login-1.21.11` |
+| `1.19.2`、`1.19.4` | 17 | `compat_login-1.21.11` |
+| `1.20.1`、`1.20.4` | 17 | `compat_login-1.21.11` |
+| `1.20.6` | 21 | `compat_login-1.21.11` |
+| `1.21.1`、`1.21.4`、`1.21.8`、`1.21.11` | 21 | `compat_login-1.21.11` |
+| `26.1`、`26.1.2`、`26.2` | 25 | `compat_login-26.2` |
 
-这些版本覆盖 Java 与 authlib 接口变更的主要边界。其他位于元数据范围内的正式版使用同一 JAR。
+这些版本覆盖 Java 与 authlib 接口变更的主要边界。同一条线内其他位于元数据范围中的正式版使用该线的同一个 JAR。
 
 ### 版本分支
 
-仓库为支持范围内的每个正式版保留一个 `minecraft/<版本号>` 分支，例如 `minecraft/1.16`、`minecraft/1.20.6` 和 `minecraft/26.2`。这些分支是同一套已验证通用源码的版本入口，不是互不兼容的多套 JAR；正常下载和发布仍以 `main` 及 GitHub Releases 为准。
+仓库为支持范围内的每个正式版保留一个 `minecraft/<版本号>` 分支，例如 `minecraft/1.16`、`minecraft/1.20.6` 和 `minecraft/26.2`。这些分支是同一套已验证核心源码的版本入口，不是互不兼容的多套实现；正常下载和发布仍以 `main` 及 GitHub Releases 为准。
 
 ## 一、从零创建 Fabric 服务器
 
@@ -136,34 +141,35 @@ stop
 
 ## 二、安装 Compat Login
 
-### 第 6 步：获取通用 JAR
+### 第 6 步：获取对应的 JAR
 
-从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载最新的通用附件：
+从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载与服务器 Minecraft 版本匹配的那一个附件：
 
 ```text
-compat_login-universal-0.3.1.jar
+compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.2-1.1.0.jar      # Minecraft 26.1 至 26.2
 ```
 
-该 JAR 可用于本文支持表中的全部 Minecraft 版本。历史 `0.3.0` Release 使用按 Minecraft 版本命名的附件；从 `0.3.1` 开始只需下载同一个通用 JAR。
+附件名中的版本号是该 JAR 支持的最高 Minecraft 正式版，后面的 `1.1.0` 是模组版本。
 
-也可以从源码构建：
+也可以从源码构建（需要 JDK 25 或更新版本，因为新版线编译为 Java 25 字节码）：
 
 ```powershell
-.\gradlew.bat test
 .\gradlew.bat build
 ```
 
-成品位于：
+两个成品位于同一目录：
 
 ```text
-build\libs\compat_login-universal-0.3.1.jar
+build\libs\compat_login-1.21.11-1.1.0.jar
+build\libs\compat_login-26.2-1.1.0.jar
 ```
 
 ### 第 7 步：放入 `mods` 目录
 
 ```text
 mods\
-└─ compat_login-universal-0.3.1.jar
+└─ compat_login-1.21.11-1.1.0.jar
 ```
 
 Compat Login 不强制依赖 Fabric API。如果其他模组需要 Fabric API，可继续保留对应 Minecraft 版本的 Fabric API JAR。
@@ -385,7 +391,7 @@ config\compat_login.json
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 0.3.1
+compat_login 1.1.0
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -419,13 +425,13 @@ Authenticated PlayerName (uuid) via LittleSkin
 /account migrate confirm <迁移码>
 ```
 
-`confirm` 不要求管理员权限，但执行者的登录 UUID 必须与迁移目标 UUID 完全一致。确认后，服务器会以 `player data migration taking place, wait for 5 minutes` 为理由临时封禁并踢出目标玩家。目标玩家完全离线后，服务器会完成以下操作：
+`confirm` 不要求管理员权限，但执行者的登录 UUID 必须与迁移目标 UUID 完全一致。确认后，服务器会踢出目标玩家，并在迁移事务结束前按 UUID 拒绝该账号重新登录；该锁不会写入原版封禁列表。目标玩家完全离线后，服务器会完成以下操作：
 
 - 将来源 UUID 的 `playerdata`、`advancements` 和 `stats` 文件覆盖到目标 UUID；
 - 改写玩家 NBT/JSON 中出现的来源 UUID，并删除来源 UUID 文件；
 - 从 `usercache.json` 删除来源身份缓存并保留正确的目标身份；
 - 清除服务端内存中的统计与进度缓存，避免旧目标数据在下次登录时覆盖迁移结果；
-- 5 分钟后自动执行 `pardon`，解除迁移用的临时封禁。
+- 迁移完成或失败回滚后立即释放目标 UUID 的登录锁，玩家随后即可重新连接。
 
 每次迁移都会先把来源文件、被覆盖的目标文件和 `usercache.json` 备份到 `config/compat_login/migration-backups/`。中途写入失败时会自动回滚。已有目标数据会被覆盖；来源账号以后再次登录会创建一份新的空白数据。模组只能可靠迁移上述原版 UUID 存档，其他模组或插件的私有数据库需要按其各自文档另行迁移。
 
@@ -452,7 +458,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-universal-0.3.1.jar
+      └─ compat_login-1.21.11-1.1.0.jar
 ```
 
 根目录 `config.yml` 至少确认：
@@ -493,7 +499,7 @@ pause
 1. 在控制台执行 `stop`；
 2. 备份整个服务器，至少备份世界和 `config`；
 3. 从 `mods` 删除所有旧的 `compat_login-*.jar`；
-4. 从 Releases 下载 `compat_login-universal-0.3.1.jar` 并放入 `mods`；
+4. 从 Releases 下载与本服 Minecraft 版本对应的 `compat_login-<最高支持版本>-1.1.0.jar` 并放入 `mods`；
 5. 保留原来的 `config/compat_login.json`；
 6. 已有 authlib-injector 时可保留原 `-javaagent` 参数；
 7. 将 Fabric Loader 更新到 `0.19.3` 或更新稳定版；
@@ -526,7 +532,7 @@ online-mode=true
 
 ### Fabric 报告重复的 `compat_login`
 
-`mods` 中存在多个 Compat Login JAR。删除旧版，只保留一个 `compat_login-universal-0.3.1.jar`。
+`mods` 中存在多个 Compat Login JAR。删除其余的，只保留与本服 Minecraft 版本对应的那一个；两条版本线的 JAR 不能同时安装。
 
 ### `http is disabled`
 
@@ -553,7 +559,8 @@ online-mode=true
 确认：
 
 - 使用的是 Compat Login `0.3.0` 或更新版本；
-- Minecraft 为 `1.16` 至 `26.2` 正式版，而非 `26.3` 快照；
+- Minecraft 为 `1.16` 至 `1.21.11` 或 `26.1` 至 `26.2` 正式版，而非 `26.3` 快照；
+- 安装的 JAR 与服务器所在版本线一致：`1.21.11` 结尾的 JAR 用于 `1.21.11` 及更早版本，`26.2` 结尾的 JAR 用于 `26.x`；
 - Fabric Loader 至少为 `0.18.4`；
 - 没有安装多个 Compat Login JAR。
 
@@ -571,27 +578,39 @@ online-mode=true
 
 ## 十一、开发与发布
 
-本地构建：
+本地构建需要 JDK 25 或更新版本，两条版本线共用 `src/main/java`，各自的构建脚本在 `versions/<最高支持版本>/`：
 
 ```powershell
-.\gradlew.bat test
 .\gradlew.bat build
 ```
 
-构建会额外检查所有主类的字节码主版本不高于 `52`，即 Java 8 字节码。
+该命令会编译并测试两条线，把两个发布 JAR 收集到 `build\libs`，只构建其中一条时使用：
+
+```powershell
+.\gradlew.bat :versions:1.21.11:build
+.\gradlew.bat :versions:26.2:build
+```
+
+旧线构建会额外检查所有主类的字节码主版本不高于 `52`，即 Java 8 字节码。
 
 使用本地 authlib-injector JAR 做联合启动测试：
 
 ```powershell
-.\gradlew.bat runServer "-PcompatLoginTestAuthlibInjector=D:\path\to\authlib-injector-1.2.7.jar"
+.\gradlew.bat :versions:1.21.11:runServer "-PcompatLoginTestAuthlibInjector=D:\path\to\authlib-injector-1.2.7.jar"
+```
+
+对已构建的 JAR 做真实服务端启动测试（`-JavaExecutable` 用于指定该 Minecraft 版本需要的 JDK）：
+
+```powershell
+powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.2 -ModJar build\libs\compat_login-26.2-1.1.0.jar
 ```
 
 GitHub Actions 包含：
 
 - 单元测试；
 - Java 8 字节码检查；
-- 14 个 Minecraft / Java 组合的服务端启动测试；
-- `v*` 标签的 GitHub Release 自动创建和 JAR 上传。
+- 14 个 Minecraft / Java 组合的服务端启动测试，每个组合使用所属版本线的 JAR；
+- `v*` 标签的 GitHub Release 自动创建和两个 JAR 的上传。
 
 ## 实现原理
 
@@ -603,7 +622,7 @@ Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则�
 - Java 8 可用的 `HttpURLConnection`；
 - 直接读取 `server.properties` 的安全检查。
 
-因此可以使用同一个 Java 8 JAR 跨越 Minecraft 1.16 至 26.2，同时仍在新版 Java 上运行。
+因此同一套源码只需要两个构建产物：一个 Java 8 字节码的 JAR 覆盖 Minecraft 1.16 至 1.21.11，一个 Java 25 字节码、不做重映射的 JAR 覆盖 26.1 至 26.2。
 
 ## 参考资料
 

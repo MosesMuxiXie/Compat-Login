@@ -6,6 +6,7 @@
 		"CommandsMixin",
 		"MinecraftServerMixin",
 		"PlayerListAccessor",
+		"PlayerListLoginMixin",
 		"YggdrasilMinecraftSessionServiceMixin"
 	],
 	"injectors": {

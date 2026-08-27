@@ -1,0 +1,61 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap'
+	id 'maven-publish'
+}
+
+ext {
+	minecraftDependency = ">=${project.legacy_lowest_version} <=${project.name}"
+	javaDependency = project.legacy_java_dependency
+	javaRelease = 8
+	testJavaRelease = 21
+}
+
+apply from: rootProject.file('gradle/version-module.gradle')
+
+loom {
+	runs {
+		server {
+			if (project.hasProperty('compatLoginTestAuthlibInjector')) {
+				vmArg "-javaagent:${file(project.property('compatLoginTestAuthlibInjector')).absolutePath}=littleskin.cn"
+			}
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.legacy_compile_version}"
+	mappings loom.officialMojangMappings()
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+}
+
+tasks.register('verifyJava8Bytecode') {
+	group = 'verification'
+	description = 'Fails if any mod class would be rejected by a Java 8 runtime.'
+	dependsOn tasks.named('classes')
+
+	def classDirs = sourceSets.main.output.classesDirs
+	doLast {
+		classDirs.files.each { directory ->
+			fileTree(directory).matching { include '**/*.class' }.files.each { classFile ->
+				classFile.withDataInputStream { input ->
+					def magic = input.readInt()
+					input.readUnsignedShort()
+					def major = input.readUnsignedShort()
+					if (magic != 0xCAFEBABE as int || major > 52) {
+						throw new GradleException("${classFile} is not Java 8 bytecode (major=${major})")
+					}
+				}
+			}
+		}
+	}
+}
+
+check.dependsOn tasks.named('verifyJava8Bytecode')
+
+publishing {
+	publications {
+		create('mavenJava', MavenPublication) {
+			from components.java
+		}
+	}
+}

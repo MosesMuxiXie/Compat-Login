@@ -11,6 +11,7 @@ import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -35,9 +36,9 @@ public final class MigrationManager {
     private static final long CODE_LIFETIME_MILLIS = 15L * 60L * 1000L;
     private static final long CONFIRMATION_LIFETIME_MILLIS = 5L * 60L * 1000L;
     private static final long DISCONNECT_TIMEOUT_MILLIS = 30L * 1000L;
-    private static final long TEMPORARY_BAN_MILLIS = 5L * 60L * 1000L;
     private static final long TICK_INTERVAL_MILLIS = 250L;
-    private static final String BAN_REASON = "player data migration taking place, wait for 5 minutes";
+    private static final String DISCONNECT_REASON = "Player data migration is starting. Reconnect shortly.";
+    private static final String LOGIN_LOCK_REASON = "Player data migration is in progress. Please reconnect shortly.";
     private static final String CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
     private static final Pattern COMMAND_SAFE_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -48,6 +49,8 @@ public final class MigrationManager {
     private static boolean loaded;
     private static long lastTickMillis;
     private static long lastLoadErrorLogMillis;
+    private static volatile Component loginLockMessage;
+    private static volatile boolean loginLockMessageUnavailable;
 
     private MigrationManager() {
     }
@@ -148,6 +151,10 @@ public final class MigrationManager {
                 target.getUuid()
             );
             return 1;
+        } catch (AmbiguousPlayerNameException ambiguous) {
+            ServerCommandBridge.reply(commandSource,
+                ambiguous.getMessage() + ". Re-run the command with the exact UUID instead of the name.");
+            return 0;
         } catch (IOException | RuntimeException exception) {
             CompatLogin.LOGGER.error("Cannot create player data migration request", exception);
             ServerCommandBridge.reply(commandSource, "Could not create the migration request; see the server log.");
@@ -203,19 +210,18 @@ public final class MigrationManager {
             }
             session.state = MigrationSession.WAITING_FOR_DISCONNECT;
             session.disconnectDeadlineMillis = now + DISCONNECT_TIMEOUT_MILLIS;
-            session.unbanAtMillis = now + TEMPORARY_BAN_MILLIS;
             persist();
 
             ServerCommandBridge.reply(commandSource,
                 "Migration confirmed. You will be disconnected while the server replaces the UUID data.");
-            boolean banned = ServerCommandBridge.execute(
+            boolean disconnected = ServerCommandBridge.execute(
                 commandSource.getServer(),
-                "ban " + session.targetName + " " + BAN_REASON
+                "kick " + session.targetName + " " + DISCONNECT_REASON
             );
-            if (!banned) {
+            if (!disconnected) {
                 SESSIONS.remove(session);
                 persist();
-                ServerCommandBridge.reply(commandSource, "The temporary ban failed, so no player data was changed.");
+                ServerCommandBridge.reply(commandSource, "The disconnect failed, so no player data was changed.");
                 return 0;
             }
             CompatLogin.LOGGER.info(
@@ -242,10 +248,7 @@ public final class MigrationManager {
         try {
             ensureLoaded();
         } catch (IOException | RuntimeException exception) {
-            if (now - lastLoadErrorLogMillis > 60_000L) {
-                lastLoadErrorLogMillis = now;
-                CompatLogin.LOGGER.error("Cannot load pending player migrations", exception);
-            }
+            logLoadFailure(now, exception);
             return;
         }
 
@@ -293,7 +296,7 @@ public final class MigrationManager {
                     || MigrationSession.MIGRATING.equals(session.state)) {
                     if (findOnline(server, session.targetUuid()) != null) {
                         if (now > session.disconnectDeadlineMillis) {
-                            ServerCommandBridge.execute(server, "pardon " + session.targetName);
+                            releaseLegacyBan(server, session);
                             notifyRequester(server, session,
                                 "Migration failed because the target did not disconnect; no data was changed.");
                             iterator.remove();
@@ -302,7 +305,7 @@ public final class MigrationManager {
                         continue;
                     }
                     if (findOnline(server, session.sourceUuid()) != null) {
-                        ServerCommandBridge.execute(server, "pardon " + session.targetName);
+                        releaseLegacyBan(server, session);
                         notifyRequester(server, session,
                             "Migration cancelled because the source UUID came online; no data was changed.");
                         iterator.remove();
@@ -322,7 +325,8 @@ public final class MigrationManager {
                     clearPlayerCaches(server, session.sourceUuid(), session.targetUuid());
                     session.backupPath = result.getBackupDirectory().toString();
                     session.state = MigrationSession.COMPLETED;
-                    dirty = true;
+                    persist();
+                    releaseLegacyBan(server, session);
                     notifyRequester(server, session,
                         "Migration completed: " + result.getMigratedFileCount() + " player file(s) replaced. Backup: "
                             + result.getBackupDirectory().toAbsolutePath());
@@ -334,26 +338,26 @@ public final class MigrationManager {
                         session.targetUuid,
                         result.getBackupDirectory().toAbsolutePath()
                     );
+                    iterator.remove();
+                    dirty = true;
                     continue;
                 }
 
-                if (MigrationSession.COMPLETED.equals(session.state) && now >= session.unbanAtMillis) {
-                    ServerCommandBridge.execute(server, "pardon " + session.targetName);
-                    notifyRequester(server, session,
-                        "The 5-minute migration ban for " + session.targetName + " has been removed.");
+                if (MigrationSession.COMPLETED.equals(session.state)) {
+                    releaseLegacyBan(server, session);
                     iterator.remove();
                     dirty = true;
                 }
             } catch (IOException | RuntimeException exception) {
                 CompatLogin.LOGGER.error(
-                    "Player migration {} ({}) -> {} ({}) failed; attempting to remove the temporary ban",
+                    "Player migration {} ({}) -> {} ({}) failed",
                     session.sourceName,
                     session.sourceUuid,
                     session.targetName,
                     session.targetUuid,
                     exception
                 );
-                ServerCommandBridge.execute(server, "pardon " + session.targetName);
+                releaseLegacyBan(server, session);
                 notifyRequester(server, session, "Migration failed and was rolled back; see the server log.");
                 iterator.remove();
                 dirty = true;
@@ -367,6 +371,93 @@ public final class MigrationManager {
                 CompatLogin.LOGGER.error("Cannot persist player migration state", exception);
             }
         }
+    }
+
+    public static synchronized boolean isLoginLocked(UUID uuid) {
+        if (uuid == null) {
+            return false;
+        }
+        try {
+            ensureLoaded();
+        } catch (IOException | RuntimeException exception) {
+            // A migration cannot run while its state file is unreadable, so allowing login is safe.
+            logLoadFailure(System.currentTimeMillis(), exception);
+            return false;
+        }
+
+        for (MigrationSession session : SESSIONS) {
+            if (blocksLogin(session, uuid)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns the disconnect text for a login that the lock rejects, or {@code null} when this Minecraft
+     * version exposes no usable text API. Built on first rejection so a text-API mismatch can never break
+     * the class initializer of the login path.
+     */
+    public static Component loginLockMessage() {
+        Component message = loginLockMessage;
+        if (message != null || loginLockMessageUnavailable) {
+            return message;
+        }
+        try {
+            message = MinecraftTextBridge.literal(LOGIN_LOCK_REASON);
+            loginLockMessage = message;
+            return message;
+        } catch (RuntimeException | LinkageError failure) {
+            loginLockMessageUnavailable = true;
+            CompatLogin.LOGGER.error(
+                "Cannot build the migration login-lock message, so the lock cannot reject logins on this Minecraft version",
+                failure
+            );
+            return null;
+        }
+    }
+
+    static boolean blocksLogin(MigrationSession session, UUID uuid) {
+        if (session == null || uuid == null || session.targetUuid == null) {
+            return false;
+        }
+        if (!MigrationSession.WAITING_FOR_DISCONNECT.equals(session.state)
+            && !MigrationSession.MIGRATING.equals(session.state)) {
+            return false;
+        }
+        try {
+            return uuid.equals(session.targetUuid());
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private static void logLoadFailure(long now, Exception exception) {
+        if (now - lastLoadErrorLogMillis > 60_000L) {
+            lastLoadErrorLogMillis = now;
+            CompatLogin.LOGGER.error("Cannot load pending player migrations", exception);
+        }
+    }
+
+    private static void releaseLegacyBan(MinecraftServer server, MigrationSession session) {
+        if (session.unbanAtMillis <= 0L) {
+            return;
+        }
+        boolean commandSucceeded = ServerCommandBridge.execute(server, "pardon " + session.targetName);
+        if (!commandSucceeded) {
+            CompatLogin.LOGGER.warn(
+                "Could not confirm removal of the legacy migration ban for {} ({}); check the vanilla ban list",
+                session.targetName,
+                session.targetUuid
+            );
+        } else {
+            CompatLogin.LOGGER.info(
+                "Removed the legacy temporary migration ban for {} ({})",
+                session.targetName,
+                session.targetUuid
+            );
+        }
+        session.unbanAtMillis = 0L;
     }
 
     private static void clearPlayerCaches(MinecraftServer server, UUID source, UUID target) {
@@ -474,6 +565,10 @@ public final class MigrationManager {
     private static boolean valid(MigrationSession session) {
         if (session == null || session.code == null || session.sourceName == null || session.targetName == null
             || session.sourceUuid == null || session.targetUuid == null || session.state == null) {
+            return false;
+        }
+        // Persisted names end up in server commands, so re-check them instead of trusting the file.
+        if (!commandSafe(session.sourceName) || !commandSafe(session.targetName)) {
             return false;
         }
         try {

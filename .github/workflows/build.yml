@@ -20,19 +20,18 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v5
         with:
-          java-version: '21'
+          # The 26.x line targets Java 25 bytecode, the 1.21.11 line targets Java 8.
+          java-version: '25'
           distribution: microsoft
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-      - name: Build and test universal JAR
+      - name: Build and test every release JAR
         run: bash ./gradlew build
-      - name: Upload universal JAR
+      - name: Upload release JARs
         uses: actions/upload-artifact@v7
         with:
-          name: compat-login-universal
-          path: |
-            build/libs/compat_login-universal-*.jar
-            !build/libs/*-sources.jar
+          name: compat-login-jars
+          path: build/libs/compat_login-*.jar
           if-no-files-found: error
 
   smoke-test:
@@ -46,32 +45,46 @@ jobs:
         include:
           - minecraft: '1.16.5'
             java: '8'
+            line: '1.21.11'
           - minecraft: '1.17.1'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.18.2'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.19.2'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.19.4'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.20.1'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.20.4'
             java: '17'
+            line: '1.21.11'
           - minecraft: '1.20.6'
             java: '21'
+            line: '1.21.11'
           - minecraft: '1.21.1'
             java: '21'
+            line: '1.21.11'
           - minecraft: '1.21.4'
             java: '21'
+            line: '1.21.11'
           - minecraft: '1.21.8'
             java: '21'
+            line: '1.21.11'
           - minecraft: '1.21.11'
             java: '21'
+            line: '1.21.11'
           - minecraft: '26.1.2'
             java: '25'
+            line: '26.2'
           - minecraft: '26.2'
             java: '25'
+            line: '26.2'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -80,10 +93,13 @@ jobs:
         with:
           java-version: ${{ matrix.java }}
           distribution: temurin
-      - name: Download universal JAR
+      - name: Download release JARs
         uses: actions/download-artifact@v8
         with:
-          name: compat-login-universal
+          name: compat-login-jars
           path: build/libs
       - name: Smoke test Minecraft ${{ matrix.minecraft }}
-        run: bash ./scripts/smoke-test-server.sh '${{ matrix.minecraft }}' '0.19.3' '1.1.2'
+        run: >-
+          bash ./scripts/smoke-test-server.sh
+          '${{ matrix.minecraft }}' '0.19.3' '1.1.2'
+          build/libs/compat_login-${{ matrix.line }}-*.jar

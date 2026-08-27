@@ -8,6 +8,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -27,6 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class MultiAuthService {
     private static final long WARNING_INTERVAL_NANOS = 30L * 1_000_000_000L;
+    private static final String USER_AGENT = "Compat-Login/" + modVersion();
 
     private final int connectTimeoutMillis;
     private final int requestTimeoutMillis;
@@ -99,7 +102,7 @@ public final class MultiAuthService {
         connection.setReadTimeout(requestTimeoutMillis);
         connection.setInstanceFollowRedirects(true);
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "Compat-Login/0.3");
+        connection.setRequestProperty("User-Agent", USER_AGENT);
 
         try {
             int status = connection.getResponseCode();
@@ -267,6 +270,16 @@ public final class MultiAuthService {
 
     private static boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    /** Reports the installed mod version to identity providers; falls back outside a Fabric runtime. */
+    private static String modVersion() {
+        try {
+            ModContainer container = FabricLoader.getInstance().getModContainer(CompatLogin.MOD_ID).orElse(null);
+            return container == null ? "dev" : container.getMetadata().getVersion().getFriendlyString();
+        } catch (RuntimeException | LinkageError unavailable) {
+            return "dev";
+        }
     }
 
     private static String readableMessage(Exception exception) {

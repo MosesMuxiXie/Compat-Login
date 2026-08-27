@@ -4,11 +4,7 @@ set -euo pipefail
 minecraft_version="${1:?Minecraft version is required}"
 loader_version="${2:-0.19.3}"
 installer_version="${3:-1.1.2}"
-mod_jar="${4:-}"
-
-if [[ -z "${mod_jar}" ]]; then
-  mod_jar="$(find build/libs -maxdepth 1 -name 'compat_login-universal-*.jar' ! -name '*-sources.jar' -print -quit)"
-fi
+mod_jar="${4:?Compat Login JAR is required, for example build/libs/compat_login-1.21.11-1.1.0.jar}"
 
 if [[ ! -f "${mod_jar}" ]]; then
   echo "Compat Login JAR not found: ${mod_jar}" >&2
@@ -51,7 +47,8 @@ exec 3<>"${work_dir}/server-input"
 server_pid=$!
 
 started=false
-for _ in $(seq 1 180); do
+# The window also covers downloading the vanilla server JAR and generating the first world.
+for _ in $(seq 1 "${timeout_seconds:-300}"); do
   if grep -Fq 'Done (' "${work_dir}/server.log" 2>/dev/null; then
     started=true
     break
@@ -95,4 +92,4 @@ if [[ ${server_exit} -ne 0 ]]; then
   exit "${server_exit}"
 fi
 
-echo "Smoke test passed for Minecraft ${minecraft_version}, Fabric Loader ${loader_version}"
+echo "Smoke test passed for Minecraft ${minecraft_version}, Fabric Loader ${loader_version}, $(basename "${mod_jar}")"
