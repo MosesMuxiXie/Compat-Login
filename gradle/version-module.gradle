@@ -30,6 +30,10 @@ sourceSets {
 dependencies {
 	testImplementation 'org.junit.jupiter:junit-jupiter:5.12.2'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.12.2'
+	// The game classes cannot be put on the test classpath: Loom resolves the Minecraft dependency against
+	// this module's compile target (the legacy 1.16.5 jar for the 1.21.11 line), and carrying those legacy
+	// libraries into the test runtime breaks the mod's own classpath. Tests therefore stay pure logic and
+	// reach a game type only when the dev classpath already carries a linkable one.
 }
 
 test {

@@ -12,11 +12,11 @@ The mod never receives, stores, or forwards player passwords. Players still sign
 
 ## Version compatibility
 
-Compat Login `1.1.0` ships two release JARs, one per Minecraft mapping line. Each JAR is named after the highest stable release it supports:
+Compat Login `1.1.1` ships two release JARs, one per Minecraft mapping line. Each JAR is named after the highest stable release it supports:
 
 ```text
-compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 through 1.21.11
-compat_login-26.2-1.1.0.jar      # Minecraft 26.1 through 26.2
+compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 through 1.21.11
+compat_login-26.2-1.1.1.jar      # Minecraft 26.1 through 26.2
 ```
 
 Minecraft `26.1` and newer ship unobfuscated, and Fabric Loader no longer loads runtime mappings for them, so that line needs its own artifact. Both JARs are built from exactly the same core sources; only the mapping mode and bytecode level differ.
@@ -27,11 +27,13 @@ Minecraft `26.1` and newer ship unobfuscated, and Fabric Loader no longer loads 
 | Fabric Loader | `0.18.4` or newer; tested with stable `0.19.3` |
 | Fabric API | not required; it may remain installed when other mods need it |
 | authlib-injector | optional; tested with `1.2.7` |
-| Compat Login | `1.1.0` |
+| Compat Login | `1.1.1` |
 
 Install only the JAR that matches the server's Minecraft version. Never install both.
 
 Minecraft `26.3` snapshots are outside the current support range. Snapshot classes and methods may change; support should only be extended after the corresponding stable release passes the startup matrix.
+
+Since `1.21.9`, the second argument of `PlayerList.canPlayerLogin` is a `NameAndId` record instead of an authlib `GameProfile`, so `1.1.0` and older throw `Cannot read the player UUID` as soon as a player joins. Use `1.1.1` or newer; see the troubleshooting entry in section 9.
 
 ### Continuous integration startup tests
 
@@ -146,11 +148,11 @@ Always stop the server cleanly before installing mods or changing authentication
 Download the asset that matches the server's Minecraft version from [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases):
 
 ```text
-compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 through 1.21.11
-compat_login-26.2-1.1.0.jar      # Minecraft 26.1 through 26.2
+compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 through 1.21.11
+compat_login-26.2-1.1.1.jar      # Minecraft 26.1 through 26.2
 ```
 
-The version in the asset name is the highest stable Minecraft release that JAR supports; the trailing `1.1.0` is the mod version.
+The version in the asset name is the highest stable Minecraft release that JAR supports; the trailing `1.1.1` is the mod version.
 
 To build from source (JDK 25 or newer is required, because the modern line targets Java 25 bytecode):
 
@@ -161,15 +163,15 @@ To build from source (JDK 25 or newer is required, because the modern line targe
 Both artifacts land in the same directory:
 
 ```text
-build\libs\compat_login-1.21.11-1.1.0.jar
-build\libs\compat_login-26.2-1.1.0.jar
+build\libs\compat_login-1.21.11-1.1.1.jar
+build\libs\compat_login-26.2-1.1.1.jar
 ```
 
 ### Step 7: Put it in `mods`
 
 ```text
 mods\
-└─ compat_login-1.21.11-1.1.0.jar
+└─ compat_login-1.21.11-1.1.1.jar
 ```
 
 Compat Login does not require Fabric API. Keep the Fabric API JAR for the matching Minecraft version if another installed mod needs it.
@@ -393,7 +395,7 @@ The startup log should contain the actual Minecraft and Loader versions, for exa
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 1.1.0
+compat_login 1.1.1
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -460,7 +462,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-1.21.11-1.1.0.jar
+      └─ compat_login-1.21.11-1.1.1.jar
 ```
 
 At minimum, confirm the following entries in the root `config.yml`:
@@ -501,7 +503,7 @@ pause
 1. Run `stop` in the server console.
 2. Back up the complete server, or at least the world and `config` directory.
 3. Delete every old `compat_login-*.jar` from `mods`.
-4. Download the `compat_login-<highest supported version>-1.1.0.jar` that matches this server from Releases and put it in `mods`.
+4. Download the `compat_login-<highest supported version>-<mod version>.jar` that matches this server from Releases and put it in `mods`.
 5. Keep the existing `config/compat_login.json`.
 6. Keep the existing `-javaagent` argument if the server already uses authlib-injector.
 7. Upgrade Fabric Loader to `0.19.3` or a newer stable release.
@@ -568,6 +570,19 @@ Confirm that:
 
 Include the complete `latest.log` and crash report when opening an issue.
 
+### Players disconnect with `Internal server error` and the log shows `Cannot read the player UUID` (`1.1.0` and older)
+
+Symptom: on Minecraft `1.21.9`, `1.21.10` or `1.21.11`, a player disconnects right after authentication succeeds and the log shows:
+
+```text
+java.lang.IllegalStateException: Cannot read the player UUID from an authlib GameProfile
+Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
+```
+
+Cause: since `1.21.9` the second argument of `PlayerList.canPlayerLogin` is a `NameAndId` record instead of an authlib `GameProfile`, and that record only exposes `id()`/`name()`. The reflection bridge in `1.1.0` only knew `getId()`, so reading the UUID for the migration login lock threw and killed the connection (the player then also sees `Sending unknown packet 'clientbound/minecraft:disconnect'`).
+
+Fix: upgrade to `1.1.1` or newer and restart the server. No configuration change is required, and a failed identity read now only logs one line and lets the login proceed.
+
 ## 10. Security notes
 
 - Keep the server on `online-mode=true`.
@@ -616,11 +631,11 @@ GitHub Actions includes:
 
 ## Implementation
 
-Older Minecraft authlib versions return `GameProfile` from `hasJoinedServer`, while newer versions return `ProfileResult`. Compat Login uses:
+Older Minecraft authlib versions return `GameProfile` from `hasJoinedServer`, while newer versions return `ProfileResult`; since `1.21.9` the second argument of `PlayerList.canPlayerLogin` is a `NameAndId` record instead of a `GameProfile`. Compat Login uses:
 
 - an internal profile model independent of a particular authlib release;
 - Mixin-grouped adapters for the supported method signatures;
-- runtime reflection to create either a legacy `GameProfile` or a modern `ProfileResult`;
+- runtime reflection to create either a legacy `GameProfile` or a modern `ProfileResult`, and to read any identity object through its `id()`/`name()` or `getId()`/`getName()` accessors (`GameProfile` 2.x-6.x, record-style `GameProfile`, `NameAndId`);
 - Java 8-compatible `HttpURLConnection`;
 - a security check that reads `server.properties` directly.
 

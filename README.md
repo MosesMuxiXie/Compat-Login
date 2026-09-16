@@ -12,11 +12,11 @@ Compat Login 是一个只安装在服务端的 Fabric 模组。它让同一个 `
 
 ## 版本兼容性
 
-Compat Login `1.1.0` 按 Minecraft 的映射方式分成两个发布 JAR，每个 JAR 以自己支持的最高正式版命名：
+Compat Login `1.1.1` 按 Minecraft 的映射方式分成两个发布 JAR，每个 JAR 以自己支持的最高正式版命名：
 
 ```text
-compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 至 1.21.11
-compat_login-26.2-1.1.0.jar      # Minecraft 26.1 至 26.2
+compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.2-1.1.1.jar      # Minecraft 26.1 至 26.2
 ```
 
 Minecraft `26.1` 起官方发布不再混淆，Fabric Loader 也不再加载运行时映射，所以这条线必须单独构建。两个 JAR 使用完全相同的一套核心源码，只有映射方式和字节码级别不同。
@@ -27,11 +27,13 @@ Minecraft `26.1` 起官方发布不再混淆，Fabric Loader 也不再加载运�
 | Fabric Loader | 最低 `0.18.4`，使用最新稳定版 `0.19.3` 验证 |
 | Fabric API | 不需要；可与整合包中已有的 Fabric API 共存 |
 | authlib-injector | 可选；已验证 `1.2.7` |
-| Compat Login | `1.1.0` |
+| Compat Login | `1.1.1` |
 
 服务器只安装与自身 Minecraft 版本对应的那一个 JAR，不要同时放入两个。
 
 Minecraft `26.3` 快照不在当前支持范围内。快照的类和方法会继续变化，应在对应正式版发布并通过启动测试后再扩大范围。
+
+自 `1.21.9` 起 `PlayerList.canPlayerLogin` 的第二个参数由 authlib `GameProfile` 换成了 `NameAndId` 记录，`1.1.0` 及更早版本会因此在玩家进服时抛 `Cannot read the player UUID`；请使用 `1.1.1` 或更新版本，详见第九节排错条目。
 
 ### 持续集成启动测试
 
@@ -146,11 +148,11 @@ stop
 从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载与服务器 Minecraft 版本匹配的那一个附件：
 
 ```text
-compat_login-1.21.11-1.1.0.jar   # Minecraft 1.16 至 1.21.11
-compat_login-26.2-1.1.0.jar      # Minecraft 26.1 至 26.2
+compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.2-1.1.1.jar      # Minecraft 26.1 至 26.2
 ```
 
-附件名中的版本号是该 JAR 支持的最高 Minecraft 正式版，后面的 `1.1.0` 是模组版本。
+附件名中的版本号是该 JAR 支持的最高 Minecraft 正式版，后面的 `1.1.1` 是模组版本。
 
 也可以从源码构建（需要 JDK 25 或更新版本，因为新版线编译为 Java 25 字节码）：
 
@@ -161,15 +163,15 @@ compat_login-26.2-1.1.0.jar      # Minecraft 26.1 至 26.2
 两个成品位于同一目录：
 
 ```text
-build\libs\compat_login-1.21.11-1.1.0.jar
-build\libs\compat_login-26.2-1.1.0.jar
+build\libs\compat_login-1.21.11-1.1.1.jar
+build\libs\compat_login-26.2-1.1.1.jar
 ```
 
 ### 第 7 步：放入 `mods` 目录
 
 ```text
 mods\
-└─ compat_login-1.21.11-1.1.0.jar
+└─ compat_login-1.21.11-1.1.1.jar
 ```
 
 Compat Login 不强制依赖 Fabric API。如果其他模组需要 Fabric API，可继续保留对应 Minecraft 版本的 Fabric API JAR。
@@ -393,7 +395,7 @@ config\compat_login.json
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 1.1.0
+compat_login 1.1.1
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -460,7 +462,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-1.21.11-1.1.0.jar
+      └─ compat_login-1.21.11-1.1.1.jar
 ```
 
 根目录 `config.yml` 至少确认：
@@ -501,7 +503,7 @@ pause
 1. 在控制台执行 `stop`；
 2. 备份整个服务器，至少备份世界和 `config`；
 3. 从 `mods` 删除所有旧的 `compat_login-*.jar`；
-4. 从 Releases 下载与本服 Minecraft 版本对应的 `compat_login-<最高支持版本>-1.1.0.jar` 并放入 `mods`；
+4. 从 Releases 下载与本服 Minecraft 版本对应的 `compat_login-<最高支持版本>-<模组版本>.jar` 并放入 `mods`；
 5. 保留原来的 `config/compat_login.json`；
 6. 已有 authlib-injector 时可保留原 `-javaagent` 参数；
 7. 将 Fabric Loader 更新到 `0.19.3` 或更新稳定版；
@@ -568,6 +570,19 @@ online-mode=true
 
 提交问题时应附上完整 `latest.log` 和崩溃报告。
 
+### 玩家登录时 `Internal server error` 且日志出现 `Cannot read the player UUID`（`1.1.0` 及更早）
+
+症状：Minecraft `1.21.9`、`1.21.10`、`1.21.11` 上玩家鉴权成功后立刻掉线，日志里能看到：
+
+```text
+java.lang.IllegalStateException: Cannot read the player UUID from an authlib GameProfile
+Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
+```
+
+原因：`PlayerList.canPlayerLogin` 的第二个参数从 `1.21.9` 起由 authlib `GameProfile` 换成了 `NameAndId` 记录，后者只有 `id()`/`name()`；`1.1.0` 的反射桥只认 `getId()`，于是迁移登录锁读取 UUID 时抛异常并打断连接（同一玩家随后还会看到 `Sending unknown packet 'clientbound/minecraft:disconnect'`）。
+
+解决：升级到 `1.1.1` 或更新版本，重启服务器即可，不需要改动配置；此后该读取失败也只会记一条日志并放行登录，不会再打断连接。
+
 ## 十、安全说明
 
 - 服务器必须保持 `online-mode=true`；
@@ -604,7 +619,7 @@ online-mode=true
 对已构建的 JAR 做真实服务端启动测试（`-JavaExecutable` 用于指定该 Minecraft 版本需要的 JDK）：
 
 ```powershell
-powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.2 -ModJar build\libs\compat_login-26.2-1.1.0.jar
+powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.2 -ModJar build\libs\compat_login-26.2-1.1.1.jar
 ```
 
 GitHub Actions 包含：
@@ -616,11 +631,11 @@ GitHub Actions 包含：
 
 ## 实现原理
 
-Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则返回 `ProfileResult`。Compat Login 使用：
+Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则返回 `ProfileResult`；`PlayerList.canPlayerLogin` 的第二个参数也从 `1.21.9` 起由 `GameProfile` 换成 `NameAndId` 记录。Compat Login 使用：
 
 - 不依赖特定 authlib 版本的内部档案模型；
 - 多个受 Mixin 分组约束的方法签名适配器；
-- 运行时反射创建旧版 `GameProfile` 或新版 `ProfileResult`；
+- 运行时反射创建旧版 `GameProfile` 或新版 `ProfileResult`，并按 `id()`/`name()` 与 `getId()`/`getName()` 两类访问器读取任意身份对象（`GameProfile` 2.x-6.x、记录式 `GameProfile`、`NameAndId`）；
 - Java 8 可用的 `HttpURLConnection`；
 - 直接读取 `server.properties` 的安全检查。
 

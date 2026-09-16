@@ -14,7 +14,7 @@
 - **多身份源鉴权**：替换原版 `YggdrasilMinecraftSessionService.hasJoinedServer`，**并行**查询所有启用 provider，任一命中即放行（首个成功即返回，整体等待由 `overallTimeoutSeconds` 兜底）；配置位于 `config/compat_login.json`（首次启动自动生成，含 Mojang 与 LittleSkin 两个默认服务）。
 - **安全护栏**：启动时强制校验 `server.properties` 的 `online-mode=true`（否则拒绝启动）；检测到服务端 authlib-injector 时进入兼容模式；配置文件非法时拒绝启动且不覆盖原文件。
 - **`/account migrate` 玩家数据迁移**：管理员发起一次性确认码，目标账号上线确认后自动踢出、锁定目标登录、把 `playerdata/advancements/stats/usercache` 中源 UUID 改写为目标 UUID，全程带备份与回滚（事务式）。
-- **跨版本兼容**：同一套源码产出两个 JAR，覆盖 Minecraft 1.16–1.21.11（重映射 intermediary、Java 8 字节码）与 26.1–26.2（官方名、Java 25 字节码），authlib 2.x/6+/7+ 的 `GameProfile`/`ProfileResult` 差异用反射桥接。
+- **跨版本兼容**：同一套源码产出两个 JAR，覆盖 Minecraft 1.16–1.21.11（重映射 intermediary、Java 8 字节码）与 26.1–26.2（官方名、Java 25 字节码），authlib 2.x/6+/7+ 的 `GameProfile`/`ProfileResult` 差异，以及 1.21.9+ `PlayerList.canPlayerLogin` 的 `NameAndId` 参数，全部用反射桥接。
 
 ## 2. 项目架构
 
@@ -30,7 +30,7 @@ compat_login-template-1.21.11/
 │  ├─ config/                         # 配置：加载/校验/迁移/端点解析
 │  ├─ migration/                      # 迁移：状态机 + 文件事务 + 命令注册 + 文本/命令/版本桥
 │  └─ mixin/                          # 5 个 Mixin（见下）
-├─ src/test/java/                     # 11 个测试类、32 个 @Test（纯逻辑，不依赖 Minecraft）
+├─ src/test/java/                     # 11 个测试类、42 个 @Test（纯逻辑，不依赖 Minecraft）
 ├─ versions/1.21.11/build.gradle      # 旧线：fabric-loom-remap，编译目标 1.16.5，release 8
 ├─ versions/26.2/build.gradle         # 新线：fabric-loom（不重映射），release 25
 ├─ gradle/version-module.gradle       # 两线共享配置（sourceSets 指向根 src/、fabric.mod.json 模板化等）
@@ -48,7 +48,7 @@ compat_login-template-1.21.11/
 | `compat_login-26.2-<ver>.jar` | MC `>=26.1 <=26.2`，Java `>=25` | Java 25 | 不做重映射（26.x 官方名） |
 
 - 模块名 = 该线最高支持版本；JAR 名 = `compat_login-<模块名>-<模组版本>`（`archivesName` 自动生成，不手写）。
-- `collectReleaseJars` 是 `Sync` 任务，每次构建自动清除 `build/libs` 里的陈旧产物，并校验数量 = 线数。
+- `collectReleaseJars` 是 `Sync` 任务，每次构建自动清除 `build/libs` 里的陈旧产物，只收集本次 `project.version` 的 JAR，并按 `(rootProject.name-模块名-版本.jar)` 精确校验文件名集合（模块 `build/libs` 会长期堆积历史版本，1.1.1 轮曾因此“收集到 4 个”而失败）。
 - `-Dfile.encoding=COMPAT` 解决中文路径下 Gradle @argfile 的 GBK/UTF-8 乱码（**需 JDK 18+ 运行 Gradle**，见第 4 节）。
 - 新线编译时校验运行 Gradle 的 JDK ≥ 25，否则直接失败并给出明确提示。
 - 本地沙箱内跑 Gradle：普通 workspace 模式只有在 wrapper 发行版已解压、守护进程已预热后才能跑通（首次会因写 `%USERPROFILE%\.gradle` 被拒）。
@@ -60,7 +60,7 @@ compat_login-template-1.21.11/
 | `YggdrasilMinecraftSessionServiceMixin` | authlib `hasJoinedServer`（3 个签名，`@Group min=1 max=1`，`remap=false`） | 鉴权替换 |
 | `CommandsMixin` | `Commands.<init>` RETURN | 注册 `/account migrate` |
 | `MinecraftServerMixin` | `tickServer` TAIL | 每 250ms 推进迁移状态机 |
-| `PlayerListLoginMixin` | `canPlayerLogin` HEAD（`@Coerce` 抗签名漂移） | 迁移期间锁定目标 UUID 登录 |
+| `PlayerListLoginMixin` | `canPlayerLogin` HEAD（`@Coerce` 抗签名漂移；1.21.9+ 第二参数为 `NameAndId`，读取 UUID 失败即放行） | 迁移期间锁定目标 UUID 登录 |
 | `PlayerListAccessor` | `PlayerList.stats/advancements` | 迁移后清内存缓存 |
 
 ### 迁移状态机（`MigrationManager`）
@@ -120,6 +120,22 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 - **方案 C（熔断跳过失效源）评估后不做**：并行之后"降优先级"无意义，而"临时跳过失效源"会让该源恢复后的一段时间内其玩家无法登录（fail-open 语义倒退），风险大于收益，记于此备查。
 - **方案 B（登录鉴权整体异步化）**：见第 4 节"可选功能（未来工作）"。
 
+### 3.4 本轮（1.21.9+ 登录崩溃：`canPlayerLogin` 身份对象漂移为 `NameAndId`）
+
+线上现象：1.21.11 服务器上玩家（LittleSkin 经 authlib-injector）鉴权成功后**立刻掉线**，日志依次是
+`IllegalStateException: Cannot read the player UUID from an authlib GameProfile` →
+`Caused by: NoSuchMethodException: net.minecraft.class_11560.id()` →
+`Sending unknown packet 'clientbound/minecraft:disconnect'` → `lost connection: Internal server error`。
+
+- **根因**：`PlayerListLoginMixin` 注入的 `PlayerList.canPlayerLogin(SocketAddress, …)` 第二个参数在 **1.21.9 起由 authlib `GameProfile` 换成 `NameAndId` 记录**（只有 `id()`/`name()`）。mixin 用 `@Coerce Object` 编译期无感，`AuthlibProfileAdapter` 又只探测 `getId()`/`getName()`（`getId` 失败后回落到 `id` 也失败），于是抛异常打断登录线程；`disconnect` 包发送失败只是连带症状。
+- **证据（全部本地实测，未依赖网络猜测）**：下载 fabric intermediary 1.21.8/1.21.9/1.21.10/1.21.11 四份映射比对——`method_14586` 的参数在 1.21.8 是 `Lcom/mojang/authlib/GameProfile;`，1.21.9+ 变成 `Lnet/minecraft/class_11560;`，而 `class_11560` 的成员是 `Codec field_62419`、`UUID comp_4422`、`String comp_4423`，访问器为 `comp_4422(): UUID` 与 `comp_4423(): String`（即 `NameAndId` 记录）；`javap` 扫遍 gradle 缓存里全部 18 个 authlib：`2.1.28–6.0.58` 的 `GameProfile` 只有 `getId()`，`7.0.61/7.0.63/9.0.75` 只有 `id()`，`UserIdentity` 在所有版本都不存在。因此该缺陷影响 **1.21.9/1.21.10/1.21.11 全线**，与是否加载 authlib-injector 无关。
+- **修复 A（`AuthlibProfileAdapter`）**：`invokeAccessor` 改为候选名数组，**记录式访问器优先**——`readProfileId`：`id()` → `getId()`；`readProfileName`：`name()` → `getName()`；全部失败时抛最后一个 `NoSuchMethodException`（保留原有报错可读性，正是它暴露出 `class_11560.id()`）。公共 API 名不变（`readProfileId`/`readProfileName` 语义是"读身份对象"），三处调用点零改动；`getProperties`/`properties` 的既有用法不变。
+- **修复 B（`PlayerListLoginMixin`）**：新增 `compatLogin$readIdentity`，`identity == null` 或读取抛 `RuntimeException`/`LinkageError` 时**一次性记日志并放行**（`compatLogin$identityReadFailureReported` 节流），迁移锁只能失效、不能再打断连接；javadoc 记录签名漂移事实。
+- **修复 C（构建）**：`collectReleaseJars` 原先收 `compat_login-*.jar`，模块 `build/libs` 里的历史版本（`...-1.1.0.jar`）会被一起同步进根 `build/libs`，导致"Expected 2 but collected 4"；现改为按 `project.version` 过滤 + 精确校验 `(rootProject.name-模块名-版本.jar)` 集合。
+- **测试**：`AuthlibProfileAdapterTest` 从 2 个用例扩到 6 个——新增 `readsTheRecordShapeUsedByNameAndIdSinceMinecraft1219`（夹具只暴露 `id()`/`name()`，即本次崩溃形状的直接回归）、`readsTheRealNameAndIdOfThisMinecraftLine`（反射取真实 `NameAndId`：新线 dev classpath 上有 authlib 的 `...response.NameAndId` 并实际执行；旧线因编译目标是 1.16.5、游戏类无法链接而 `assumeTrue` 跳过，由夹具用例 + 字节码抽查兜底）、`readsTheJavaBeanGameProfileShapeUsedByAuthlib2To6`、`reportsTheUnsupportedShapeAsAnAuthlibProfileFailure`（锁定 `IllegalStateException` + `NoSuchMethodException` cause 契约）。夹具用普通嵌套静态类而非 `record`，避免两条线 `testJavaRelease` 8/25 的编译差异。
+  - 试过给 test 源集补回 minecraft 依赖让旧线也能跑真实类，**失败且已回退**：Loom 会按该模块的编译目标（1.16.5）解析 `com.mojang:minecraft:<module>`，把 1.16.5 的库灌进测试运行时（`datafixerupper 4.0.26` 等），反而破坏模组自身 classpath。结论：测试保持纯逻辑，游戏类型只在 dev classpath 恰好可链接时才用。
+- **验证**：`gradlew build` 全绿（两线编译、两线各 40 个测试 0 失败、`verifyJava8Bytecode`、`collectReleaseJars` 只收 1.1.1 两个 JAR）；`javap` 抽查两个 JAR：`readProfileId` 常量池顺序 `id`→`getId`、`readProfileName` 为 `name`→`getName`、mixin handler 异常表含 `RuntimeException`/`LinkageError`；新线测试直接消费了真实 authlib `NameAndId` 类。**未做**真机登录验证（沙箱无客户端与线上身份源，见第 4 节第 8 条）。
+
 ## 4. 遗留问题与潜在隐患（全部）
 
 ### 高优先级
@@ -134,11 +150,11 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 ### 中优先级
 
 3. **`compat_login.mixins.json` 的 `compatibilityLevel: JAVA_8` 与 26.2 线 Java 25 字节码不一致**：目前 Mixin 能跑通但属隐性依赖。**建议**：像 `fabric.mod.json` 一样按线模板化（新线 `JAVA_25`；若捆绑 Mixin 不支持该枚举就取最高可用值，smoke 测试兜底）。
-4. **反射未缓存**：`ServerCommandBridge.execute` 每次调用都 `getMethods()` 全量扫描（现仅 pardon 用，影响小）；`AuthlibProfileAdapter` 每次登录都反射构造 GameProfile/PropertyMap。**建议**：首次解析后缓存 static final，失败降级。
+4. **反射未缓存**：`ServerCommandBridge.execute` 每次调用都 `getMethods()` 全量扫描（现仅 pardon 用，影响小）；`AuthlibProfileAdapter` 每次登录都反射构造 GameProfile/PropertyMap，读取身份对象的候选名数组也每次都走 `getMethod`（名字很少、失败即抛，量级小）。**建议**：首次解析后缓存 static final，失败降级；缓存必须按运行时类区分（两条线的 `GameProfile` 类不同）。
 5. **`StoreFile.schemaVersion` 写入但加载时从不校验**（`MigrationManager.ensureLoaded`）：未来 schema 升级时旧文件会被静默按新结构解析。**建议**：加载时校验版本，不符则拒绝或显式迁移。
 6. **`smoke-test-server.sh` 不支持超时参数**（硬编码 `timeout_seconds:-300`），与 PS1 版不对等；本机 1.16.5 实测需 264s，CI 冷启动 + JAR 下载可能吃满 300s（job 级 10 分钟兜底）。**建议**：`.sh` 加第 5 参数并让 CI 显式传 420。
 7. **CI 矩阵是抽样而非全版本**：旧线跳过了 1.19.3、1.20.2、1.20.5 等签名断点版本；当前 14 个抽样点均实测通过，但 README 应注明"抽样验证，同线内其他版本用同一 JAR、按需自查"。
-8. **运行时交互路径没有自动化验证**：`canBegin`/`tell`/`disconnect`（VersionBridge 三路）与鉴权并行路径都只在真实玩家交互时执行，smoke 测试没有玩家进服，覆盖不到；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果），并把"权限 API 变更时更新 VersionBridge"写进发布检查单。
+8. **运行时交互路径没有自动化验证**：`canBegin`/`tell`/`disconnect`（VersionBridge 三路）与鉴权并行路径都只在真实玩家交互时执行，smoke 测试没有玩家进服，覆盖不到；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**1.21.9 的 `NameAndId` 参数漂移就是同一类隐患的实例**：启动 smoke 全绿，只有真机登录才炸。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果），并把"权限 API / 身份对象变更时更新 VersionBridge 与 `AuthlibProfileAdapter`"写进发布检查单。
 
 ### 低优先级 / 环境
 
@@ -159,6 +175,8 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 
 ### 已解决（本文件存在之前的记录）
 
+- ~~1.21.9+ 玩家鉴权成功后掉线（`Cannot read the player UUID` / `NoSuchMethodException: class_11560.id()`）~~ → `canPlayerLogin` 参数为 `NameAndId`，身份桥改为记录式访问器优先 + 读取失败放行（3.4）。
+- ~~`collectReleaseJars` 把模块 `build/libs` 里的历史版本 JAR 一起收集导致"Expected 2 but collected 4"~~ → 按 `project.version` 过滤 + 精确文件名集合校验（3.4）。
 - ~~鉴权 provider 串行查询、超时叠加（13s×N）~~ → 并行查询 + `overallTimeoutSeconds` 总兜底（3.3）。
 - ~~登录锁文本 `static final` 引发 `ExceptionInInitializerError`~~ → 惰性构造 + 失败放行（3.1）。
 - ~~迁移命令按名字解析取第一个匹配~~ → 全量收集 + 歧义拒绝（3.1）。

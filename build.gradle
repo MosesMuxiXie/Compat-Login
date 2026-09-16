@@ -6,25 +6,32 @@ plugins {
 }
 
 def releaseModules = [':versions:1.21.11', ':versions:26.2']
+def releaseJarVersion = project.version.toString()
+
+// The module libs directories can still hold JARs of earlier mod versions, so only this build's
+// version is collected; otherwise stale artifacts fail the release count check below.
+// Archive names follow gradle/version-module.gradle: "<root project name>-<module name>-<version>".
+def expectedReleaseJars = releaseModules.collect { path ->
+	"${rootProject.name}-${project(path).name}-${releaseJarVersion}.jar"
+}.sort()
 
 def collectReleaseJars = tasks.register('collectReleaseJars', Sync) {
 	group = 'build'
 	description = 'Collects one release JAR per supported Minecraft line into build/libs.'
 
 	from(releaseModules.collect { path -> project(path).layout.buildDirectory.dir('libs') }) {
-		include 'compat_login-*.jar'
-		exclude '*-sources.jar'
+		include "compat_login-*-${releaseJarVersion}.jar"
 	}
 	into layout.buildDirectory.dir('libs')
 
 	dependsOn releaseModules.collect { path -> "${path}:build" }
 
 	doLast {
-		def jars = fileTree(destinationDir).matching { include '*.jar' }.files.sort { it.name }
-		if (jars.size() != releaseModules.size()) {
-			throw new GradleException("Expected ${releaseModules.size()} release JARs but collected ${jars.size()}")
+		def jars = fileTree(destinationDir).matching { include '*.jar' }.files.collect { it.name }.sort()
+		if (jars != expectedReleaseJars) {
+			throw new GradleException("Expected ${expectedReleaseJars} but collected ${jars}")
 		}
-		jars.each { jar -> logger.lifecycle("Release artifact: ${jar.name}") }
+		jars.each { jar -> logger.lifecycle("Release artifact: ${jar}") }
 	}
 }
 

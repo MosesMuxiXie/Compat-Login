@@ -5,7 +5,21 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.UUID;
 
-/** Bridges authlib 2.x GameProfile and authlib 6+/7+ ProfileResult at runtime. */
+/**
+ * Bridges every identity object Minecraft hands to this mod across the supported range:
+ *
+ * <ul>
+ *   <li>authlib 2.x-6.x {@code com.mojang.authlib.GameProfile} - {@code getId()}/{@code getName()};</li>
+ *   <li>authlib 7.x/9.x {@code GameProfile}, now a record - {@code id()}/{@code name()};</li>
+ *   <li>{@code com.mojang.authlib.yggdrasil.response.NameAndId}, the second argument of
+ *       {@code PlayerList.canPlayerLogin} since Minecraft 1.21.9 - a record exposing only
+ *       {@code id()}/{@code name()}, with no {@code getId()}/{@code getName()} at all;</li>
+ *   <li>authlib 6.x/7.x {@code ProfileResult} for the session-service return value.</li>
+ * </ul>
+ *
+ * The public API keeps its original names, but every reader accepts either accessor shape, so callers
+ * never need to know which identity type they hold.
+ */
 public final class AuthlibProfileAdapter {
     private static final String GAME_PROFILE_CLASS = "com.mojang.authlib.GameProfile";
     private static final String PROPERTY_CLASS = "com.mojang.authlib.properties.Property";
@@ -57,17 +71,27 @@ public final class AuthlibProfileAdapter {
         }
     }
 
+    /**
+     * Reads the player name from any supported identity object. The record accessor is probed first:
+     * {@code NameAndId} (Minecraft 1.21.9+) only has {@code name()}, while a {@code GameProfile} of any
+     * authlib version exposes at least one of the two.
+     */
     public static String readProfileName(Object gameProfile) {
         try {
-            return (String) invokeAccessor(gameProfile, "getName", "name");
+            return (String) invokeAccessor(gameProfile, "name", "getName");
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Cannot read the player name from an authlib GameProfile", unwrap(exception));
         }
     }
 
+    /**
+     * Reads the player UUID from any supported identity object. The record accessor is probed first:
+     * {@code NameAndId} (Minecraft 1.21.9+) and authlib 7+ {@code GameProfile} only have {@code id()},
+     * while authlib 2.x-6.x {@code GameProfile} only has {@code getId()}.
+     */
     public static UUID readProfileId(Object gameProfile) {
         try {
-            return (UUID) invokeAccessor(gameProfile, "getId", "id");
+            return (UUID) invokeAccessor(gameProfile, "id", "getId");
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Cannot read the player UUID from an authlib GameProfile", unwrap(exception));
         }
@@ -111,13 +135,25 @@ public final class AuthlibProfileAdapter {
         }
     }
 
-    private static Object invokeAccessor(Object target, String oldName, String newName)
+    /**
+     * Invokes the first accessor name that the runtime class actually declares. The names are tried in
+     * order and the last {@code NoSuchMethodException} is rethrown, so a failure message still names the
+     * candidate that was probed last (that is how {@code NameAndId} surfaced as
+     * {@code NoSuchMethodException: net.minecraft.class_11560.id()}).
+     */
+    private static Object invokeAccessor(Object target, String... candidateNames)
         throws ReflectiveOperationException {
-        try {
-            return target.getClass().getMethod(oldName).invoke(target);
-        } catch (NoSuchMethodException ignored) {
-            return target.getClass().getMethod(newName).invoke(target);
+        NoSuchMethodException lastFailure = null;
+        for (String candidateName : candidateNames) {
+            try {
+                return target.getClass().getMethod(candidateName).invoke(target);
+            } catch (NoSuchMethodException missing) {
+                lastFailure = missing;
+            }
         }
+        throw lastFailure == null
+            ? new NoSuchMethodException("no accessor candidate supplied")
+            : lastFailure;
     }
 
     private static Throwable constructAuthenticationUnavailable(
