@@ -12,28 +12,28 @@ The mod never receives, stores, or forwards player passwords. Players still sign
 
 ## Version compatibility
 
-Compat Login `1.1.1` ships two release JARs, one per Minecraft mapping line. Each JAR is named after the highest stable release it supports:
+Compat Login `1.1.2` ships two release JARs, one per Minecraft mapping line. Each JAR is named after the highest stable release it supports:
 
 ```text
-compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 through 1.21.11
-compat_login-26.2-1.1.1.jar      # Minecraft 26.1 through 26.2
+compat_login-1.21.11-1.1.2.jar   # Minecraft 1.16 through 1.21.11
+compat_login-26.3-1.1.2.jar      # Minecraft 26.1 through 26.3
 ```
 
 Minecraft `26.1` and newer ship unobfuscated, and Fabric Loader no longer loads runtime mappings for them, so that line needs its own artifact. Both JARs are built from exactly the same core sources; only the mapping mode and bytecode level differ.
 
 | Component | Supported range |
 | --- | --- |
-| Minecraft | stable releases from `1.16` through `1.21.11` (obfuscated line) and `26.1` through `26.2` (modern line) |
-| Fabric Loader | `0.18.4` or newer; tested with stable `0.19.3` |
+| Minecraft | stable releases from `1.16` through `1.21.11` (obfuscated line) and `26.1` through `26.3` (modern line) |
+| Fabric Loader | `0.18.4` or newer; tested with `0.19.3` |
 | Fabric API | not required; it may remain installed when other mods need it |
 | authlib-injector | optional; tested with `1.2.7` |
-| Compat Login | `1.1.1` |
+| Compat Login | `1.1.2` |
 
 Install only the JAR that matches the server's Minecraft version. Never install both.
 
-Minecraft `26.3` snapshots are outside the current support range. Snapshot classes and methods may change; support should only be extended after the corresponding stable release passes the startup matrix.
+Support now includes the stable Minecraft `26.3` release. Minecraft `26.4` snapshots are outside the current support range; snapshot classes and methods may still change.
 
-Since `1.21.9`, the second argument of `PlayerList.canPlayerLogin` is a `NameAndId` record instead of an authlib `GameProfile`, so `1.1.0` and older throw `Cannot read the player UUID` as soon as a player joins. Use `1.1.1` or newer; see the troubleshooting entry in section 9.
+Since `1.21.9`, `PlayerList.canPlayerLogin` receives a `NameAndId` record. Version `1.1.2` fixes its UUID/name accessors in Fabric production mappings. Version `1.1.1` prevented the login crash but could still log `Cannot read the player UUID` and bypass the migration login lock. Upgrade to `1.1.2`; see section 9.
 
 ### Continuous integration startup tests
 
@@ -48,7 +48,7 @@ GitHub Actions starts real servers with Fabric Loader `0.19.3` for the following
 | `1.20.1`, `1.20.4` | 17 | `compat_login-1.21.11` |
 | `1.20.6` | 21 | `compat_login-1.21.11` |
 | `1.21.1`, `1.21.4`, `1.21.8`, `1.21.11` | 21 | `compat_login-1.21.11` |
-| `26.1`, `26.1.2`, `26.2` | 25 | `compat_login-26.2` |
+| `26.1.2`, `26.2`, `26.3` | 25 | `compat_login-26.3` |
 
 These versions cover the main Java and authlib API boundaries. Other stable releases inside a line's metadata range use that line's JAR.
 
@@ -68,7 +68,7 @@ Choose the server's Minecraft version first, then install the corresponding Java
 | `1.17.x` | Java 17 |
 | `1.18.x` through `1.20.4` | Java 17 |
 | `1.20.5` through `1.21.11` | Java 21 |
-| `26.1` through `26.2` | Java 25 |
+| `26.1` through `26.3` | Java 25 |
 
 You can install a suitable build from [Eclipse Temurin](https://adoptium.net/temurin/releases/). Reopen the terminal after installation and check it:
 
@@ -148,11 +148,11 @@ Always stop the server cleanly before installing mods or changing authentication
 Download the asset that matches the server's Minecraft version from [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases):
 
 ```text
-compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 through 1.21.11
-compat_login-26.2-1.1.1.jar      # Minecraft 26.1 through 26.2
+compat_login-1.21.11-1.1.2.jar   # Minecraft 1.16 through 1.21.11
+compat_login-26.3-1.1.2.jar      # Minecraft 26.1 through 26.3
 ```
 
-The version in the asset name is the highest stable Minecraft release that JAR supports; the trailing `1.1.1` is the mod version.
+The version in the asset name is the highest stable Minecraft release that JAR supports; the trailing `1.1.2` is the mod version.
 
 To build from source (JDK 25 or newer is required, because the modern line targets Java 25 bytecode):
 
@@ -163,15 +163,15 @@ To build from source (JDK 25 or newer is required, because the modern line targe
 Both artifacts land in the same directory:
 
 ```text
-build\libs\compat_login-1.21.11-1.1.1.jar
-build\libs\compat_login-26.2-1.1.1.jar
+build\libs\compat_login-1.21.11-1.1.2.jar
+build\libs\compat_login-26.3-1.1.2.jar
 ```
 
 ### Step 7: Put it in `mods`
 
 ```text
 mods\
-└─ compat_login-1.21.11-1.1.1.jar
+└─ compat_login-1.21.11-1.1.2.jar
 ```
 
 Compat Login does not require Fabric API. Keep the Fabric API JAR for the matching Minecraft version if another installed mod needs it.
@@ -395,7 +395,7 @@ The startup log should contain the actual Minecraft and Loader versions, for exa
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 1.1.1
+compat_login 1.1.2
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -462,7 +462,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-1.21.11-1.1.1.jar
+      └─ compat_login-1.21.11-1.1.2.jar
 ```
 
 At minimum, confirm the following entries in the root `config.yml`:
@@ -563,25 +563,28 @@ For security, if a provider request fails and no other provider successfully mat
 Confirm that:
 
 - Compat Login is `0.3.0` or newer;
-- Minecraft is a stable release from `1.16` through `1.21.11` or from `26.1` through `26.2`, not a `26.3` snapshot;
-- the installed JAR matches the server's line: the `1.21.11` JAR for `1.21.11` and older, the `26.2` JAR for `26.x`;
+- Minecraft is a stable release from `1.16` through `1.21.11` or from `26.1` through `26.3`, not a `26.4` snapshot;
+- the installed JAR matches the server's line: the `1.21.11` JAR for `1.21.11` and older, the `26.3` JAR for `26.x`;
 - Fabric Loader is at least `0.18.4`;
 - only one Compat Login JAR is installed.
 
 Include the complete `latest.log` and crash report when opening an issue.
 
-### Players disconnect with `Internal server error` and the log shows `Cannot read the player UUID` (`1.1.0` and older)
+### `Cannot read the player UUID` or an ineffective migration login lock (`1.1.1` and older)
 
-Symptom: on Minecraft `1.21.9`, `1.21.10` or `1.21.11`, a player disconnects right after authentication succeeds and the log shows:
+Minecraft `1.21.9`, `1.21.10` and `1.21.11` pass a `NameAndId` record to `PlayerList.canPlayerLogin`. Its development accessors are `id()`/`name()`, but Fabric production uses `net.minecraft.class_11560` with `comp_4422()` (UUID) and `comp_4423()` (name). Reflection strings are not automatically remapped during the build.
+
+Version `1.1.0` and older interrupted the connection with `Internal server error` when reading the UUID failed. Version `1.1.1` prevented the crash but only added the development accessor names, so production could still report:
 
 ```text
-java.lang.IllegalStateException: Cannot read the player UUID from an authlib GameProfile
-Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
+Cannot read the player UUID from the login identity of type net.minecraft.class_11560, so the migration login lock is disabled for this server
 ```
 
-Cause: since `1.21.9` the second argument of `PlayerList.canPlayerLogin` is a `NameAndId` record instead of an authlib `GameProfile`, and that record only exposes `id()`/`name()`. The reflection bridge in `1.1.0` only knew `getId()`, so reading the UUID for the migration login lock threw and killed the connection (the player then also sees `Sending unknown packet 'clientbound/minecraft:disconnect'`).
+Replace the mod with your line's `1.1.2` JAR, remove older JARs and fully restart the server. No configuration change is needed. Version `1.1.2` supports official, legacy JavaBean and intermediary accessors, restoring the target UUID's migration login lock. Unknown identity types retain the one-time error and login fallback.
 
-Fix: upgrade to `1.1.1` or newer and restart the server. No configuration change is required, and a failed identity read now only logs one line and lets the login proceed.
+### Multiple identity sources can own the same player name
+
+This warning is expected when multiple identity providers are enabled. Identical player names from different providers can represent different UUIDs. Manage permissions, allowlists, bans and migrations by authenticated UUID. Migration commands reject ambiguous names; supply an explicit UUID instead.
 
 ## 10. Security notes
 
@@ -605,7 +608,7 @@ That command compiles and tests both lines and collects the two release JARs int
 
 ```powershell
 .\gradlew.bat :versions:1.21.11:build
-.\gradlew.bat :versions:26.2:build
+.\gradlew.bat :versions:26.3:build
 ```
 
 The obfuscated line additionally verifies that every main class has a class-file major version no higher than `52`, which is Java 8 bytecode.
@@ -619,14 +622,14 @@ To run a development server with a local authlib-injector JAR:
 To start a real server against a built JAR (`-JavaExecutable` selects the JDK that Minecraft version needs):
 
 ```powershell
-powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.2 -ModJar build\libs\compat_login-26.2-1.1.0.jar
+powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.3 -ModJar build\libs\compat_login-26.3-1.1.2.jar
 ```
 
 GitHub Actions includes:
 
 - unit tests;
 - Java 8 bytecode verification;
-- real server startup tests for 14 Minecraft / Java combinations, each using the JAR of its own line;
+- real server startup tests for 15 Minecraft / Java combinations, each using the JAR of its own line;
 - automatic GitHub Release creation and upload of both JARs for `v*` tags.
 
 ## Implementation
@@ -635,18 +638,18 @@ Older Minecraft authlib versions return `GameProfile` from `hasJoinedServer`, wh
 
 - an internal profile model independent of a particular authlib release;
 - Mixin-grouped adapters for the supported method signatures;
-- runtime reflection to create either a legacy `GameProfile` or a modern `ProfileResult`, and to read any identity object through its `id()`/`name()` or `getId()`/`getName()` accessors (`GameProfile` 2.x-6.x, record-style `GameProfile`, `NameAndId`);
+- runtime reflection to create either a legacy `GameProfile` or a modern `ProfileResult`, and to read any identity object through its `id()`/`name()`, `getId()`/`getName()`, or intermediary `comp_4422()`/`comp_4423()` accessors (`GameProfile` 2.x-6.x, record-style `GameProfile`, `NameAndId`);
 - Java 8-compatible `HttpURLConnection`;
 - a security check that reads `server.properties` directly.
 
-The same sources therefore need only two artifacts: a Java 8 bytecode JAR for Minecraft 1.16 through 1.21.11, and a Java 25 bytecode JAR without remapping for 26.1 through 26.2.
+The same sources therefore need only two artifacts: a Java 8 bytecode JAR for Minecraft 1.16 through 1.21.11, and a Java 25 bytecode JAR without remapping for 26.1 through 26.3.
 
 ## References
 
 - [Official Fabric server launcher](https://fabricmc.net/use/server/)
 - [Fabric Meta API](https://meta.fabricmc.net/)
 - [Fabric Loader documentation](https://docs.fabricmc.net/develop/loader/)
-- [Fabric 26.2 development documentation](https://docs.fabricmc.net/develop/)
+- [Fabric 26.3 development documentation](https://docs.fabricmc.net/develop/)
 - [MCDReforged configuration](https://docs.mcdreforged.com/en/latest/configuration.html)
 - [Using authlib-injector on a Minecraft server](https://yushijinhun.github.io/authlib-injector/en/using-authlib-injector-on-a-minecraft-server.html)
 - [authlib-injector Yggdrasil server technical specification](https://yushijinhun.github.io/authlib-injector/en/yggdrasil-server-technical-specification.html)

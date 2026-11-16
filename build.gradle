@@ -5,7 +5,7 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
 }
 
-def releaseModules = [':versions:1.21.11', ':versions:26.2']
+def releaseModules = [':versions:1.21.11', ':versions:26.3']
 def releaseJarVersion = project.version.toString()
 
 // The module libs directories can still hold JARs of earlier mod versions, so only this build's

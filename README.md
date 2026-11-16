@@ -12,28 +12,28 @@ Compat Login 是一个只安装在服务端的 Fabric 模组。它让同一个 `
 
 ## 版本兼容性
 
-Compat Login `1.1.1` 按 Minecraft 的映射方式分成两个发布 JAR，每个 JAR 以自己支持的最高正式版命名：
+Compat Login `1.1.2` 按 Minecraft 的映射方式分成两个发布 JAR，每个 JAR 以自己支持的最高正式版命名：
 
 ```text
-compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 至 1.21.11
-compat_login-26.2-1.1.1.jar      # Minecraft 26.1 至 26.2
+compat_login-1.21.11-1.1.2.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.3-1.1.2.jar      # Minecraft 26.1 至 26.3
 ```
 
 Minecraft `26.1` 起官方发布不再混淆，Fabric Loader 也不再加载运行时映射，所以这条线必须单独构建。两个 JAR 使用完全相同的一套核心源码，只有映射方式和字节码级别不同。
 
 | 组件 | 支持范围 |
 | --- | --- |
-| Minecraft | `1.16` 至 `1.21.11`（旧映射线）、`26.1` 至 `26.2`（新版线） |
-| Fabric Loader | 最低 `0.18.4`，使用最新稳定版 `0.19.3` 验证 |
+| Minecraft | `1.16` 至 `1.21.11`（旧映射线）、`26.1` 至 `26.3`（新版线） |
+| Fabric Loader | 最低 `0.18.4`，使用 `0.19.3` 验证 |
 | Fabric API | 不需要；可与整合包中已有的 Fabric API 共存 |
 | authlib-injector | 可选；已验证 `1.2.7` |
-| Compat Login | `1.1.1` |
+| Compat Login | `1.1.2` |
 
 服务器只安装与自身 Minecraft 版本对应的那一个 JAR，不要同时放入两个。
 
-Minecraft `26.3` 快照不在当前支持范围内。快照的类和方法会继续变化，应在对应正式版发布并通过启动测试后再扩大范围。
+已扩展至 Minecraft `26.3` 正式版。`26.4` 快照不在当前支持范围内；快照的类和方法仍可能变化。
 
-自 `1.21.9` 起 `PlayerList.canPlayerLogin` 的第二个参数由 authlib `GameProfile` 换成了 `NameAndId` 记录，`1.1.0` 及更早版本会因此在玩家进服时抛 `Cannot read the player UUID`；请使用 `1.1.1` 或更新版本，详见第九节排错条目。
+自 `1.21.9` 起 `PlayerList.canPlayerLogin` 的第二个参数由 authlib `GameProfile` 换成了 `NameAndId` 记录。`1.1.2` 修复了 Fabric 发布环境中该记录的 UUID/名字访问器映射；`1.1.1` 虽避免登录崩溃，但仍可能报 `Cannot read the player UUID` 并使迁移登录锁失效，请升级到 `1.1.2`，详见第九节。
 
 ### 持续集成启动测试
 
@@ -48,7 +48,7 @@ GitHub Actions 会使用 Fabric Loader `0.19.3` 实际启动以下关键版本�
 | `1.20.1`、`1.20.4` | 17 | `compat_login-1.21.11` |
 | `1.20.6` | 21 | `compat_login-1.21.11` |
 | `1.21.1`、`1.21.4`、`1.21.8`、`1.21.11` | 21 | `compat_login-1.21.11` |
-| `26.1`、`26.1.2`、`26.2` | 25 | `compat_login-26.2` |
+| `26.1.2`、`26.2`、`26.3` | 25 | `compat_login-26.3` |
 
 这些版本覆盖 Java 与 authlib 接口变更的主要边界。同一条线内其他位于元数据范围中的正式版使用该线的同一个 JAR。
 
@@ -68,7 +68,7 @@ GitHub Actions 会使用 Fabric Loader `0.19.3` 实际启动以下关键版本�
 | `1.17.x` | Java 17 |
 | `1.18.x` 至 `1.20.4` | Java 17 |
 | `1.20.5` 至 `1.21.11` | Java 21 |
-| `26.1` 至 `26.2` | Java 25 |
+| `26.1` 至 `26.3` | Java 25 |
 
 可从 [Eclipse Temurin](https://adoptium.net/temurin/releases/) 安装对应版本。安装后重新打开终端并检查：
 
@@ -148,11 +148,11 @@ stop
 从 [GitHub Releases](https://github.com/MosesMuxiXie/Compat-Login/releases) 下载与服务器 Minecraft 版本匹配的那一个附件：
 
 ```text
-compat_login-1.21.11-1.1.1.jar   # Minecraft 1.16 至 1.21.11
-compat_login-26.2-1.1.1.jar      # Minecraft 26.1 至 26.2
+compat_login-1.21.11-1.1.2.jar   # Minecraft 1.16 至 1.21.11
+compat_login-26.3-1.1.2.jar      # Minecraft 26.1 至 26.3
 ```
 
-附件名中的版本号是该 JAR 支持的最高 Minecraft 正式版，后面的 `1.1.1` 是模组版本。
+附件名中的版本号是该 JAR 支持的最高 Minecraft 正式版，后面的 `1.1.2` 是模组版本。
 
 也可以从源码构建（需要 JDK 25 或更新版本，因为新版线编译为 Java 25 字节码）：
 
@@ -163,15 +163,15 @@ compat_login-26.2-1.1.1.jar      # Minecraft 26.1 至 26.2
 两个成品位于同一目录：
 
 ```text
-build\libs\compat_login-1.21.11-1.1.1.jar
-build\libs\compat_login-26.2-1.1.1.jar
+build\libs\compat_login-1.21.11-1.1.2.jar
+build\libs\compat_login-26.3-1.1.2.jar
 ```
 
 ### 第 7 步：放入 `mods` 目录
 
 ```text
 mods\
-└─ compat_login-1.21.11-1.1.1.jar
+└─ compat_login-1.21.11-1.1.2.jar
 ```
 
 Compat Login 不强制依赖 Fabric API。如果其他模组需要 Fabric API，可继续保留对应 Minecraft 版本的 Fabric API JAR。
@@ -395,7 +395,7 @@ config\compat_login.json
 
 ```text
 Loading Minecraft 1.21.11 with Fabric Loader 0.19.3
-compat_login 1.1.1
+compat_login 1.1.2
 Compat Login initialized with 2 enabled authentication service(s)
 ```
 
@@ -462,7 +462,7 @@ D:\Minecraft\MCDRServer\
    ├─ server.properties
    ├─ config\compat_login.json
    └─ mods\
-      └─ compat_login-1.21.11-1.1.1.jar
+      └─ compat_login-1.21.11-1.1.2.jar
 ```
 
 根目录 `config.yml` 至少确认：
@@ -563,25 +563,28 @@ online-mode=true
 确认：
 
 - 使用的是 Compat Login `0.3.0` 或更新版本；
-- Minecraft 为 `1.16` 至 `1.21.11` 或 `26.1` 至 `26.2` 正式版，而非 `26.3` 快照；
-- 安装的 JAR 与服务器所在版本线一致：`1.21.11` 结尾的 JAR 用于 `1.21.11` 及更早版本，`26.2` 结尾的 JAR 用于 `26.x`；
+- Minecraft 为 `1.16` 至 `1.21.11` 或 `26.1` 至 `26.3` 正式版，而非 `26.4` 快照；
+- 安装的 JAR 与服务器所在版本线一致：`1.21.11` 结尾的 JAR 用于 `1.21.11` 及更早版本，`26.3` 结尾的 JAR 用于 `26.x`；
 - Fabric Loader 至少为 `0.18.4`；
 - 没有安装多个 Compat Login JAR。
 
 提交问题时应附上完整 `latest.log` 和崩溃报告。
 
-### 玩家登录时 `Internal server error` 且日志出现 `Cannot read the player UUID`（`1.1.0` 及更早）
+### `Cannot read the player UUID` 或迁移期间登录锁失效（`1.1.1` 及更早）
 
-症状：Minecraft `1.21.9`、`1.21.10`、`1.21.11` 上玩家鉴权成功后立刻掉线，日志里能看到：
+Minecraft `1.21.9`、`1.21.10`、`1.21.11` 的 `PlayerList.canPlayerLogin` 接收 `NameAndId` 记录。开发环境的方法名是 `id()`/`name()`，但 Fabric 发布环境中的类名为 `net.minecraft.class_11560`，访问器是 `comp_4422()`（UUID）和 `comp_4423()`（名字）。反射字符串不会随构建自动重映射。
+
+`1.1.0` 及更早版本读取 UUID 失败时会打断连接，出现 `Internal server error`；`1.1.1` 避免了崩溃，但只增加开发环境的访问器名，发布环境仍会报：
 
 ```text
-java.lang.IllegalStateException: Cannot read the player UUID from an authlib GameProfile
-Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
+Cannot read the player UUID from the login identity of type net.minecraft.class_11560, so the migration login lock is disabled for this server
 ```
 
-原因：`PlayerList.canPlayerLogin` 的第二个参数从 `1.21.9` 起由 authlib `GameProfile` 换成了 `NameAndId` 记录，后者只有 `id()`/`name()`；`1.1.0` 的反射桥只认 `getId()`，于是迁移登录锁读取 UUID 时抛异常并打断连接（同一玩家随后还会看到 `Sending unknown packet 'clientbound/minecraft:disconnect'`）。
+解决：替换为本版本线的 `1.1.2` JAR，移除旧 JAR，完整重启服务器；无需修改配置。`1.1.2` 同时支持官方名、旧版 JavaBean 名和 intermediary 访问器，恢复迁移目标 UUID 的登录锁。未识别身份类型时仍保留一次性报错并放行的兜底行为。
 
-解决：升级到 `1.1.1` 或更新版本，重启服务器即可，不需要改动配置；此后该读取失败也只会记一条日志并放行登录，不会再打断连接。
+### 多身份源同名警告
+
+`multiple identity sources can own the same player name` 是启用多个身份源时的正常提醒。不同身份源的同名玩家可能拥有不同 UUID；权限、白名单、封禁和迁移应按认证 UUID 管理。迁移命令遇到同名多 UUID 会拒绝按名字选择，请改用明确的 UUID。
 
 ## 十、安全说明
 
@@ -605,7 +608,7 @@ Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
 
 ```powershell
 .\gradlew.bat :versions:1.21.11:build
-.\gradlew.bat :versions:26.2:build
+.\gradlew.bat :versions:26.3:build
 ```
 
 旧线构建会额外检查所有主类的字节码主版本不高于 `52`，即 Java 8 字节码。
@@ -619,14 +622,14 @@ Caused by: java.lang.NoSuchMethodException: net.minecraft.class_11560.id()
 对已构建的 JAR 做真实服务端启动测试（`-JavaExecutable` 用于指定该 Minecraft 版本需要的 JDK）：
 
 ```powershell
-powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.2 -ModJar build\libs\compat_login-26.2-1.1.1.jar
+powershell -File scripts\smoke-test-server.ps1 -MinecraftVersion 26.3 -ModJar build\libs\compat_login-26.3-1.1.2.jar
 ```
 
 GitHub Actions 包含：
 
 - 单元测试；
 - Java 8 字节码检查；
-- 14 个 Minecraft / Java 组合的服务端启动测试，每个组合使用所属版本线的 JAR；
+- 15 个 Minecraft / Java 组合的服务端启动测试，每个组合使用所属版本线的 JAR；
 - `v*` 标签的 GitHub Release 自动创建和两个 JAR 的上传。
 
 ## 实现原理
@@ -635,18 +638,18 @@ Minecraft 旧版 authlib 的 `hasJoinedServer` 返回 `GameProfile`，新版则�
 
 - 不依赖特定 authlib 版本的内部档案模型；
 - 多个受 Mixin 分组约束的方法签名适配器；
-- 运行时反射创建旧版 `GameProfile` 或新版 `ProfileResult`，并按 `id()`/`name()` 与 `getId()`/`getName()` 两类访问器读取任意身份对象（`GameProfile` 2.x-6.x、记录式 `GameProfile`、`NameAndId`）；
+- 运行时反射创建旧版 `GameProfile` 或新版 `ProfileResult`，并按 `id()`/`name()`、`getId()`/`getName()` 与 intermediary `comp_4422()`/`comp_4423()` 访问器读取身份对象（`GameProfile` 2.x-6.x、记录式 `GameProfile`、`NameAndId`）；
 - Java 8 可用的 `HttpURLConnection`；
 - 直接读取 `server.properties` 的安全检查。
 
-因此同一套源码只需要两个构建产物：一个 Java 8 字节码的 JAR 覆盖 Minecraft 1.16 至 1.21.11，一个 Java 25 字节码、不做重映射的 JAR 覆盖 26.1 至 26.2。
+因此同一套源码只需要两个构建产物：一个 Java 8 字节码的 JAR 覆盖 Minecraft 1.16 至 1.21.11，一个 Java 25 字节码、不做重映射的 JAR 覆盖 26.1 至 26.3。
 
 ## 参考资料
 
 - [Fabric 官方服务端启动器](https://fabricmc.net/use/server/)
 - [Fabric Meta API](https://meta.fabricmc.net/)
 - [Fabric Loader 文档](https://docs.fabricmc.net/develop/loader/)
-- [Fabric 26.2 开发文档](https://docs.fabricmc.net/develop/)
+- [Fabric 26.3 开发文档](https://docs.fabricmc.net/develop/)
 - [MCDReforged：配置](https://docs.mcdreforged.com/zh-cn/latest/configuration.html)
 - [authlib-injector：在 Minecraft 服务端使用](https://yushijinhun.github.io/authlib-injector/en/using-authlib-injector-on-a-minecraft-server.html)
 - [authlib-injector：Yggdrasil 服务端技术规范](https://yushijinhun.github.io/authlib-injector/en/yggdrasil-server-technical-specification.html)

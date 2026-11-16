@@ -1,5 +1,5 @@
 plugins {
-	// Loader 26.x ships unobfuscated Minecraft, so this line builds without remapping.
+	// Minecraft 26.1+ ships unobfuscated, so this line builds without remapping.
 	id 'net.fabricmc.fabric-loom'
 }
 

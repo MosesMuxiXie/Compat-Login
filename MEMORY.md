@@ -14,7 +14,7 @@
 - **多身份源鉴权**：替换原版 `YggdrasilMinecraftSessionService.hasJoinedServer`，**并行**查询所有启用 provider，任一命中即放行（首个成功即返回，整体等待由 `overallTimeoutSeconds` 兜底）；配置位于 `config/compat_login.json`（首次启动自动生成，含 Mojang 与 LittleSkin 两个默认服务）。
 - **安全护栏**：启动时强制校验 `server.properties` 的 `online-mode=true`（否则拒绝启动）；检测到服务端 authlib-injector 时进入兼容模式；配置文件非法时拒绝启动且不覆盖原文件。
 - **`/account migrate` 玩家数据迁移**：管理员发起一次性确认码，目标账号上线确认后自动踢出、锁定目标登录、把 `playerdata/advancements/stats/usercache` 中源 UUID 改写为目标 UUID，全程带备份与回滚（事务式）。
-- **跨版本兼容**：同一套源码产出两个 JAR，覆盖 Minecraft 1.16–1.21.11（重映射 intermediary、Java 8 字节码）与 26.1–26.2（官方名、Java 25 字节码），authlib 2.x/6+/7+ 的 `GameProfile`/`ProfileResult` 差异，以及 1.21.9+ `PlayerList.canPlayerLogin` 的 `NameAndId` 参数，全部用反射桥接。
+- **跨版本兼容**：同一套源码产出两个 JAR，覆盖 Minecraft 1.16–1.21.11（重映射 intermediary、Java 8 字节码）与 26.1–26.3（官方名、Java 25 字节码），authlib 2.x/6+/7+ 的 `GameProfile`/`ProfileResult` 差异，以及 1.21.9+ `PlayerList.canPlayerLogin` 的 `NameAndId` 参数，全部用反射桥接。
 
 ## 2. 项目架构
 
@@ -32,12 +32,12 @@ compat_login-template-1.21.11/
 │  └─ mixin/                          # 5 个 Mixin（见下）
 ├─ src/test/java/                     # 11 个测试类、42 个 @Test（纯逻辑，不依赖 Minecraft）
 ├─ versions/1.21.11/build.gradle      # 旧线：fabric-loom-remap，编译目标 1.16.5，release 8
-├─ versions/26.2/build.gradle         # 新线：fabric-loom（不重映射），release 25
+├─ versions/26.3/build.gradle         # 新线：fabric-loom（不重映射），release 25
 ├─ gradle/version-module.gradle       # 两线共享配置（sourceSets 指向根 src/、fabric.mod.json 模板化等）
 ├─ build.gradle                       # 根：collectReleaseJars(Sync) 把两线 JAR 收敛到 build/libs
 ├─ scripts/smoke-test-server.{ps1,sh} # 真实服务端启动冒烟测试
 ├─ MEMORY.md                          # 本文件
-└─ .github/workflows/                 # build.yml（JDK 25 构建 + 14 版本启动矩阵）、release.yml
+└─ .github/workflows/                 # build.yml（JDK 25 构建 + 15 版本启动矩阵）、release.yml
 ```
 
 ### 构建产物约定
@@ -45,7 +45,7 @@ compat_login-template-1.21.11/
 | JAR | 覆盖 | 字节码 | 重映射 |
 | --- | --- | --- | --- |
 | `compat_login-1.21.11-<ver>.jar` | MC `>=1.16 <=1.21.11`，Java `>=8` | Java 8（有 `verifyJava8Bytecode` 任务把关） | Loom 重映射为 intermediary（如 `PlayerList→class_3324`、`canPlayerLogin→method_14586`） |
-| `compat_login-26.2-<ver>.jar` | MC `>=26.1 <=26.2`，Java `>=25` | Java 25 | 不做重映射（26.x 官方名） |
+| `compat_login-26.3-<ver>.jar` | MC `>=26.1 <=26.3`，Java `>=25` | Java 25 | 不做重映射（26.x 官方名） |
 
 - 模块名 = 该线最高支持版本；JAR 名 = `compat_login-<模块名>-<模组版本>`（`archivesName` 自动生成，不手写）。
 - `collectReleaseJars` 是 `Sync` 任务，每次构建自动清除 `build/libs` 里的陈旧产物，只收集本次 `project.version` 的 JAR，并按 `(rootProject.name-模块名-版本.jar)` 精确校验文件名集合（模块 `build/libs` 会长期堆积历史版本，1.1.1 轮曾因此“收集到 4 个”而失败）。
@@ -136,6 +136,23 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
   - 试过给 test 源集补回 minecraft 依赖让旧线也能跑真实类，**失败且已回退**：Loom 会按该模块的编译目标（1.16.5）解析 `com.mojang:minecraft:<module>`，把 1.16.5 的库灌进测试运行时（`datafixerupper 4.0.26` 等），反而破坏模组自身 classpath。结论：测试保持纯逻辑，游戏类型只在 dev classpath 恰好可链接时才用。
 - **验证**：`gradlew build` 全绿（两线编译、两线各 40 个测试 0 失败、`verifyJava8Bytecode`、`collectReleaseJars` 只收 1.1.1 两个 JAR）；`javap` 抽查两个 JAR：`readProfileId` 常量池顺序 `id`→`getId`、`readProfileName` 为 `name`→`getName`、mixin handler 异常表含 `RuntimeException`/`LinkageError`；新线测试直接消费了真实 authlib `NameAndId` 类。**未做**真机登录验证（沙箱无客户端与线上身份源，见第 4 节第 8 条）。
 
+### 3.5 本轮（1.1.2：修复发布环境 `NameAndId` 访问器映射遗漏）
+
+- **用户报错**：1.1.1 仍报 `Cannot read the player UUID from the login identity of type net.minecraft.class_11560`，迁移登录锁对该身份读取失败后放行。3.4 的修复只覆盖开发环境 `id()`/`name()`，没有使用已经查到的 intermediary 访问器，因此“避免掉线”不等于“恢复登录锁”。
+- **映射证据**：重新核对本机 Fabric 1.21.9、1.21.10、1.21.11 的 `intermediary-v2.tiny`，三者 `class_11560` 都使用 `comp_4422(): UUID` 与 `comp_4423(): String`。Loom 不会自动重映射这些反射字符串。
+- **修复**：`AuthlibProfileAdapter.readProfileId` 候选为 `id` → `getId` → `comp_4422`；`readProfileName` 为 `name` → `getName` → `comp_4423`。保留 Java 8 与 26.x 官方名兼容、未知身份读取失败的原有异常契约及 Mixin 一次性报错放行兜底；纠正 `NameAndId` 所属包与运行时名字的注释。
+- **版本与文档**：版本统一为 1.1.2，保留原有两条构建线与兼容范围；中英文 README 同步 JAR 名、升级说明、生产映射根因与同名身份源 WARN 解释。多源 WARN 是预期提醒，不能通过关闭它解决 UUID 读取错误。
+- **回归测试**：新增仅暴露 `comp_4422`/`comp_4423` 的公开夹具，分别验证 UUID/名字；修复前两条线均以 `NoSuchMethodException` 失败，修复后各 42 个测试无失败（旧线 1 个真实 authlib `NameAndId` 测试按既有策略跳过）。`gradlew build --no-parallel` 通过，含 Java 8 字节码检查；首次并行构建遇到 OneDrive stale outputs 清理失败，串行重试通过。
+- **真实运行时验证**：临时验证模组加载发布 JAR，对真实身份对象读取 UUID/名字，再调用经 Mixin 变换的 `PlayerList.canPlayerLogin`，确认 `waiting_for_disconnect`/`migrating` 两态均返回拒绝文本、同名不同 UUID 不混淆、待确认/完成态不锁定。旧 1.1.1 在真实 1.21.11 上复现 `class_11560.getId()` 失败；新 1.1.2 在 **1.21.8、1.21.9、1.21.10、1.21.11、26.1.2、26.2** 上全部通过并启动至 `Done`。用的是生产 Fabric Loader 0.19.3（intermediary/official），不是 Loom named 开发环境。网络下载超时后改用本机原版服务端 bundle 与 Loader 缓存，经 `KnotServer` 正常启动。26.x 探针最初误选 authlib 的同名记录，按真实签名改为 `net.minecraft.server.players.NameAndId` 后通过，未改生产实现。
+- **交付与清理**：根 `build/libs` 仅保留 `compat_login-1.21.11-1.1.2.jar`、`compat_login-26.2-1.1.2.jar`；删除模块 `build/libs`/`build/devlibs` 中 1.1.0、1.1.1 的旧产物，保留 1.1.2 源码包。临时服务端目录及探针在验证后清理；验证报告/运行日志在 `build/reports`。原有用户源码改动、原始日志与可复用依赖缓存保留。独立只读复核无可操作问题。尚未用真人账号进行完整的线上鉴权与文件迁移演练。
+
+### 3.6 本轮补充（1.1.2：扩展至最新正式版 Minecraft 26.3）
+
+- **范围核实**：2026-11-16 读取 Mojang 官方 `version_manifest_v2.json`，`latest.release=26.3`、`latest.snapshot=26.4-snapshot-8`；26.3 要求 Java 25。扩展至最新正式版，维持不承诺快照的策略。
+- **构建**：新版模块从 `versions/26.2/build.gradle` 移至 `versions/26.3/build.gradle`，只移动构建文件，原目录用户日志保留；根 `releaseModules`、settings include、Gradle 注释同步。仍为两条线、共用全部核心源码，模组版本仍 1.1.2。新版发布物改为 `compat_login-26.3-1.1.2.jar`（元数据 `>=26.1 <=26.3`），旧线 JAR 保留。
+- **测试与文档**：`gradlew build --no-parallel` 通过，两线各 42 个测试、0 失败、各 1 个跳过；26.3 的 authlib 不含原用例选择的 authlib NameAndId，因此该可选用例跳过，实际 Minecraft NameAndId 由生产运行时探针补充。中英文 README 范围与安装文件名同步，快照排除改为 26.4；CI 增加 26.3（共 15 个组合），26.1.2/26.2/26.3 使用同一个新版 JAR，Release 上传 glob 同步为 26.3。
+- **真实兼容验证与交付**：同一个 `compat_login-26.3-1.1.2.jar` 在 MC **26.1.2、26.2、26.3** 上，用 Fabric Loader 0.19.3 生产官方名环境全部完成真实 Minecraft NameAndId UUID/名字读取、同名 UUID 区分、实际注入 canPlayerLogin 两态拒绝断言，并正常启动至 `Done`；原始日志保存到 `build/reports/login-lock-runtime/*-compat_login-26.3-1.1.2.log`。探针未接真人客户端，完整线上鉴权/文件迁移演练仍属原有验证边界。清理被替代的旧26.2发布JAR和临时探针；旧 `versions/26.2/build` 部分只读缓存删除失败，随后强制删除被自动审批拦截（仅返回 blocked by policy），因此保留残留目录；原 `versions/26.2/logs` 保留。最终根 `build/libs` 只有 `compat_login-1.21.11-1.1.2.jar`、`compat_login-26.3-1.1.2.jar`。配置、CI、文档与产物元数据经独立只读复核，无可操作问题。
+
 ## 4. 遗留问题与潜在隐患（全部）
 
 ### 高优先级
@@ -154,7 +171,7 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 5. **`StoreFile.schemaVersion` 写入但加载时从不校验**（`MigrationManager.ensureLoaded`）：未来 schema 升级时旧文件会被静默按新结构解析。**建议**：加载时校验版本，不符则拒绝或显式迁移。
 6. **`smoke-test-server.sh` 不支持超时参数**（硬编码 `timeout_seconds:-300`），与 PS1 版不对等；本机 1.16.5 实测需 264s，CI 冷启动 + JAR 下载可能吃满 300s（job 级 10 分钟兜底）。**建议**：`.sh` 加第 5 参数并让 CI 显式传 420。
 7. **CI 矩阵是抽样而非全版本**：旧线跳过了 1.19.3、1.20.2、1.20.5 等签名断点版本；当前 14 个抽样点均实测通过，但 README 应注明"抽样验证，同线内其他版本用同一 JAR、按需自查"。
-8. **运行时交互路径没有自动化验证**：`canBegin`/`tell`/`disconnect`（VersionBridge 三路）与鉴权并行路径都只在真实玩家交互时执行，smoke 测试没有玩家进服，覆盖不到；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**1.21.9 的 `NameAndId` 参数漂移就是同一类隐患的实例**：启动 smoke 全绿，只有真机登录才炸。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果），并把"权限 API / 身份对象变更时更新 VersionBridge 与 `AuthlibProfileAdapter`"写进发布检查单。
+8. **完整运行时交互链仍缺自动化验证**：1.1.2 已用六个真实版本的发布 JAR 验证身份读取与实际 `canPlayerLogin` 登录锁（见 3.5），但 `canBegin`/`tell`/`disconnect`（VersionBridge 三路）与线上鉴权并行路径仍需真实玩家交互，常规 smoke 启动不覆盖这些路径；`VersionBridge` 依赖的 intermediary 名是静态写死的（已对照三份映射人工核实，但未来 MC 若再改权限/消息 API，桥会 fail-closed 并只留一条日志）。**1.21.9 的 `NameAndId` 参数漂移就是同一类隐患的实例**：开发环境测试和启动 smoke 全绿，发布环境仍可能失配。**建议**：发布前在旧线和新线各手动做一次完整迁移演练（管理员建单 → 目标确认 → 观察 kick/消息/迁移结果）；反射访问器需同时验证 named、intermediary、official 环境，不能只验证 authlib 中的同名类。
 
 ### 低优先级 / 环境
 
@@ -175,7 +192,7 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 
 ### 已解决（本文件存在之前的记录）
 
-- ~~1.21.9+ 玩家鉴权成功后掉线（`Cannot read the player UUID` / `NoSuchMethodException: class_11560.id()`）~~ → `canPlayerLogin` 参数为 `NameAndId`，身份桥改为记录式访问器优先 + 读取失败放行（3.4）。
+- ~~1.21.9–1.21.11 发布环境无法读取 `NameAndId` UUID、迁移登录锁失效~~ → 补上 `comp_4422`/`comp_4423` intermediary 访问器（1.1.2，3.5）；3.4 的 1.1.1 只避免了掉线，未恢复生产环境的锁。
 - ~~`collectReleaseJars` 把模块 `build/libs` 里的历史版本 JAR 一起收集导致"Expected 2 but collected 4"~~ → 按 `project.version` 过滤 + 精确文件名集合校验（3.4）。
 - ~~鉴权 provider 串行查询、超时叠加（13s×N）~~ → 并行查询 + `overallTimeoutSeconds` 总兜底（3.3）。
 - ~~登录锁文本 `static final` 引发 `ExceptionInInitializerError`~~ → 惰性构造 + 失败放行（3.1）。

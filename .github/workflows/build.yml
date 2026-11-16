@@ -81,10 +81,13 @@ jobs:
             line: '1.21.11'
           - minecraft: '26.1.2'
             java: '25'
-            line: '26.2'
+            line: '26.3'
           - minecraft: '26.2'
             java: '25'
-            line: '26.2'
+            line: '26.3'
+          - minecraft: '26.3'
+            java: '25'
+            line: '26.3'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

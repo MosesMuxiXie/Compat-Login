@@ -14,4 +14,4 @@ rootProject.name = 'compat_login'
 
 // Each module is named after the highest Minecraft release its JAR supports.
 include 'versions:1.21.11'
-include 'versions:26.2'
+include 'versions:26.3'

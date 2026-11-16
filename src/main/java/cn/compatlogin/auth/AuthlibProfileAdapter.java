@@ -11,13 +11,15 @@ import java.util.UUID;
  * <ul>
  *   <li>authlib 2.x-6.x {@code com.mojang.authlib.GameProfile} - {@code getId()}/{@code getName()};</li>
  *   <li>authlib 7.x/9.x {@code GameProfile}, now a record - {@code id()}/{@code name()};</li>
- *   <li>{@code com.mojang.authlib.yggdrasil.response.NameAndId}, the second argument of
- *       {@code PlayerList.canPlayerLogin} since Minecraft 1.21.9 - a record exposing only
- *       {@code id()}/{@code name()}, with no {@code getId()}/{@code getName()} at all;</li>
+ *   <li>Minecraft 1.21.9-1.21.11 {@code net.minecraft.server.players.NameAndId} -
+ *       {@code id()}/{@code name()} in Mojang mappings, but {@code comp_4422()}/{@code comp_4423()}
+ *       on intermediary-mapped Fabric production servers ({@code net.minecraft.class_11560});</li>
+ *   <li>26.x authlib {@code com.mojang.authlib.yggdrasil.response.NameAndId} -
+ *       {@code id()}/{@code name()};</li>
  *   <li>authlib 6.x/7.x {@code ProfileResult} for the session-service return value.</li>
  * </ul>
  *
- * The public API keeps its original names, but every reader accepts either accessor shape, so callers
+ * The public API keeps its original names, but every reader accepts all accessor shapes, so callers
  * never need to know which identity type they hold.
  */
 public final class AuthlibProfileAdapter {
@@ -74,11 +76,12 @@ public final class AuthlibProfileAdapter {
     /**
      * Reads the player name from any supported identity object. The record accessor is probed first:
      * {@code NameAndId} (Minecraft 1.21.9+) only has {@code name()}, while a {@code GameProfile} of any
-     * authlib version exposes at least one of the two.
+     * authlib version exposes at least one of the two. Fabric production servers remap the Minecraft
+     * record accessor to {@code comp_4423()}; reflection strings are not remapped by Loom.
      */
     public static String readProfileName(Object gameProfile) {
         try {
-            return (String) invokeAccessor(gameProfile, "name", "getName");
+            return (String) invokeAccessor(gameProfile, "name", "getName", "comp_4423");
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Cannot read the player name from an authlib GameProfile", unwrap(exception));
         }
@@ -87,11 +90,12 @@ public final class AuthlibProfileAdapter {
     /**
      * Reads the player UUID from any supported identity object. The record accessor is probed first:
      * {@code NameAndId} (Minecraft 1.21.9+) and authlib 7+ {@code GameProfile} only have {@code id()},
-     * while authlib 2.x-6.x {@code GameProfile} only has {@code getId()}.
+     * while authlib 2.x-6.x {@code GameProfile} only has {@code getId()}. Fabric production servers
+     * remap the Minecraft record accessor to {@code comp_4422()}; reflection strings are not remapped.
      */
     public static UUID readProfileId(Object gameProfile) {
         try {
-            return (UUID) invokeAccessor(gameProfile, "id", "getId");
+            return (UUID) invokeAccessor(gameProfile, "id", "getId", "comp_4422");
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Cannot read the player UUID from an authlib GameProfile", unwrap(exception));
         }

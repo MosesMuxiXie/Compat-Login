@@ -18,9 +18,10 @@ import java.util.UUID;
  * Rejects logins of a UUID that a running migration has locked.
  *
  * <p>The second parameter of {@code PlayerList.canPlayerLogin} drifted across the supported range and
- * therefore cannot be typed here: 1.16-1.21.8 pass an authlib {@code GameProfile} (an anonymous
- * {@code UserIdentity} implementation), while 1.21.9+ pass a {@code NameAndId} record that only exposes
- * {@code id()}/{@code name()}. {@link AuthlibProfileAdapter#readProfileId(Object)} absorbs both shapes;
+ * therefore cannot be typed here: 1.16-1.21.8 pass an authlib {@code GameProfile}, while 1.21.9+ pass a
+ * {@code NameAndId} record ({@code comp_4422()}/{@code comp_4423()} on intermediary production servers,
+ * {@code id()}/{@code name()} with official names). {@link AuthlibProfileAdapter#readProfileId(Object)}
+ * absorbs these shapes;
  * anything it cannot read only disables the migration lock for that login instead of killing the
  * connection.
  */

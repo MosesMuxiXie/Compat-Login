@@ -52,6 +52,16 @@ class AuthlibProfileAdapterTest {
         assertEquals("Moss_X", AuthlibProfileAdapter.readProfileName(new NameAndIdShape(PLAYER_ID, "Moss_X")));
     }
 
+    @Test
+    void readsUuidFromTheIntermediaryNameAndIdUsedByProductionServers() {
+        assertEquals(PLAYER_ID, AuthlibProfileAdapter.readProfileId(new IntermediaryNameAndIdShape(PLAYER_ID, "Moss_X")));
+    }
+
+    @Test
+    void readsNameFromTheIntermediaryNameAndIdUsedByProductionServers() {
+        assertEquals("Moss_X", AuthlibProfileAdapter.readProfileName(new IntermediaryNameAndIdShape(PLAYER_ID, "Moss_X")));
+    }
+
     /**
      * Runs the adapter against the real {@code NameAndId} class of the Minecraft line under test, not just
      * a fixture. The modern line carries {@code com.mojang.authlib.yggdrasil.response.NameAndId} on its dev
@@ -161,6 +171,25 @@ class AuthlibProfileAdapterTest {
         }
 
         public String name() {
+            return name;
+        }
+    }
+
+    /** Actual 1.21.9-1.21.11 Fabric production names from class_11560, not development names. */
+    public static final class IntermediaryNameAndIdShape {
+        private final UUID id;
+        private final String name;
+
+        public IntermediaryNameAndIdShape(UUID id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        public UUID comp_4422() {
+            return id;
+        }
+
+        public String comp_4423() {
             return name;
         }
     }
