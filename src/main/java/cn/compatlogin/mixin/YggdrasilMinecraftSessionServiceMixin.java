@@ -6,6 +6,7 @@ import cn.compatlogin.auth.AuthenticationServiceUnavailableException;
 import cn.compatlogin.auth.AuthlibProfileAdapter;
 import cn.compatlogin.auth.MultiAuthService;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Group;
@@ -14,7 +15,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.net.InetAddress;
 
-@Mixin(targets = "com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService", remap = false)
+@Pseudo
+@Mixin(targets = {
+    "com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService",
+    "com.mojang.authlib.services.MinecraftServicesSessionService"
+}, remap = false)
 public abstract class YggdrasilMinecraftSessionServiceMixin {
     @Group(name = "compatLogin$hasJoinedServer", min = 1, max = 1)
     @Inject(
@@ -59,6 +64,23 @@ public abstract class YggdrasilMinecraftSessionServiceMixin {
         require = 0
     )
     private void compatLogin$hasJoinedServerModern(
+        String username,
+        String serverId,
+        InetAddress address,
+        CallbackInfoReturnable<Object> callback
+    ) {
+        authenticate(username, serverId, address, callback, true);
+    }
+
+    @Group(name = "compatLogin$hasJoinedServer")
+    @Inject(
+        method = "hasJoinedServer(Ljava/lang/String;Ljava/lang/String;Ljava/net/InetAddress;)Lcom/mojang/authlib/services/ProfileResult;",
+        at = @At("HEAD"),
+        cancellable = true,
+        remap = false,
+        require = 0
+    )
+    private void compatLogin$hasJoinedServerServices(
         String username,
         String serverId,
         InetAddress address,

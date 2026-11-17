@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -62,22 +63,31 @@ class AuthlibProfileAdapterTest {
         assertEquals("Moss_X", AuthlibProfileAdapter.readProfileName(new IntermediaryNameAndIdShape(PLAYER_ID, "Moss_X")));
     }
 
-    /**
-     * Runs the adapter against the real {@code NameAndId} class of the Minecraft line under test, not just
-     * a fixture. The modern line carries {@code com.mojang.authlib.yggdrasil.response.NameAndId} on its dev
-     * classpath; the 1.21.11 line compiles against the legacy 1.16.5 jar, so its
-     * {@code net.minecraft.server.players.NameAndId} exists but its static {@code Codec} cannot link in the
-     * test JVM - that line is covered by the fixture test above and by the bytecode check instead.
-     */
+    /** Checks the actual authlib record when available; actual Minecraft identities need runtime tests. */
     @Test
     void readsTheRealNameAndIdOfThisMinecraftLine() throws Exception {
-        Class<?> type = findType("com.mojang.authlib.yggdrasil.response.NameAndId");
+        Class<?> type = findType("com.mojang.authlib.services.response.NameAndId",
+            "com.mojang.authlib.yggdrasil.response.NameAndId");
         assumeTrue(type != null, "this line's dev classpath carries no linkable NameAndId class");
 
         Object identity = type.getConstructor(UUID.class, String.class).newInstance(PLAYER_ID, "Moss_X");
 
         assertEquals(PLAYER_ID, AuthlibProfileAdapter.readProfileId(identity));
         assertEquals("Moss_X", AuthlibProfileAdapter.readProfileName(identity));
+    }
+
+    @Test
+    void createsTheProfileResultOfTheInstalledAuthlibIncludingAuthlib10() throws Exception {
+        Class<?> resultType = findType("com.mojang.authlib.services.ProfileResult",
+            "com.mojang.authlib.yggdrasil.ProfileResult");
+        assumeTrue(resultType != null, "legacy authlib returns GameProfile directly");
+        Object profile = AuthlibProfileAdapter.createGameProfile(
+            new AuthenticatedProfile(PLAYER_ID, "Moss_X", List.of()));
+
+        Object result = AuthlibProfileAdapter.createProfileResult(profile);
+
+        assertTrue(resultType.isInstance(result));
+        assertSame(profile, resultType.getMethod("profile").invoke(result));
     }
 
     @Test

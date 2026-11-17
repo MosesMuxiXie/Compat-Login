@@ -30,7 +30,7 @@ compat_login-template-1.21.11/
 │  ├─ config/                         # 配置：加载/校验/迁移/端点解析
 │  ├─ migration/                      # 迁移：状态机 + 文件事务 + 命令注册 + 文本/命令/版本桥
 │  └─ mixin/                          # 5 个 Mixin（见下）
-├─ src/test/java/                     # 11 个测试类、42 个 @Test（纯逻辑，不依赖 Minecraft）
+├─ src/test/java/                     # 12 个测试类、47 个 @Test（纯逻辑；实际交互另用服务端验证）
 ├─ versions/1.21.11/build.gradle      # 旧线：fabric-loom-remap，编译目标 1.16.5，release 8
 ├─ versions/26.3/build.gradle         # 新线：fabric-loom（不重映射），release 25
 ├─ gradle/version-module.gradle       # 两线共享配置（sourceSets 指向根 src/、fabric.mod.json 模板化等）
@@ -82,7 +82,7 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 | --- | --- | --- | --- |
 | 命令权限 ≥3 | 接口 `SharedSuggestionProvider.hasPermission(int)`（`class_2172`/`method_9259`，运行时经 MappingResolver 解析后反射调用） | `CommandSourceStack.permissions` **字段**（`class_2168`/`field_63437`）→ `LevelBasedPermissionSet.level()`（`class_12086`/`method_75009`）→ `PermissionLevel.id()`（`class_12094`/`method_75026`）≥ 3；`PermissionSet.ALL_PERMISSIONS`（`class_12096`/`field_63208`）按对象同一性直接放行 | 同名官方 API 反射：`permissions()` **方法** → `level()` → `id()` |
 | 系统消息 | `displayClientMessage(Component, boolean)`（`class_1657`/`method_7353`，1.16–1.18） | `ServerPlayer.sendSystemMessage(Component)`（`class_3222`/`method_64398`，1.19+） | 官方名 `sendSystemMessage` |
-| 踢人 | `player.connection.disconnect(Component)`——两线同名字段/方法，**直接编译调用，无需桥**（旧线映射为 `field_13987`/`method_14367`） | 同左 | 同左（继承自 `ServerCommonPacketListenerImpl`） |
+| 踢人 | `PlayerDisconnectBridge`：1.16–1.20.1 为 `class_3244.method_14367`；1.20.2 起移到父类 `class_8609.method_52396`，不能直接编译调用旧方法 | 父类 `method_52396(Component)`，经目标连接实例反射调用 | 父类官方名 `disconnect(Component)`，同一桥处理 |
 
 - 非玩家命令源（console/RCON）不走权限桥，沿用名字白名单（`getTextName()` 为 "Server"/"Rcon"）——与 0.3.x 以来的行为一致且零 I/O。
 - 关键事实（已用 1.16.5 / 1.21.11 / 26.2 三份映射逐一核实）：`CommandSourceStack.hasPermission(int)` 在 1.21.5+ 被移除；1.21.11 的 `PermissionSet` 两个 `(Permission)→Z` 方法在官方映射中**未命名**（`method_75033`/`method_75036`），所以桥刻意走 `level()→id()` 路线避开歧义；`PlayerList.disconnect(ServerPlayer, Component)` 在 1.16.5 与 26.2 上都不存在；op 列表 key 从 `GameProfile` 漂移为 26.2 的 `NameAndId`（`getOps()` 本身两线都在）。
@@ -152,6 +152,17 @@ awaiting_confirmation --确认码正确--> waiting_for_disconnect --目标离线
 - **构建**：新版模块从 `versions/26.2/build.gradle` 移至 `versions/26.3/build.gradle`，只移动构建文件，原目录用户日志保留；根 `releaseModules`、settings include、Gradle 注释同步。仍为两条线、共用全部核心源码，模组版本仍 1.1.2。新版发布物改为 `compat_login-26.3-1.1.2.jar`（元数据 `>=26.1 <=26.3`），旧线 JAR 保留。
 - **测试与文档**：`gradlew build --no-parallel` 通过，两线各 42 个测试、0 失败、各 1 个跳过；26.3 的 authlib 不含原用例选择的 authlib NameAndId，因此该可选用例跳过，实际 Minecraft NameAndId 由生产运行时探针补充。中英文 README 范围与安装文件名同步，快照排除改为 26.4；CI 增加 26.3（共 15 个组合），26.1.2/26.2/26.3 使用同一个新版 JAR，Release 上传 glob 同步为 26.3。
 - **真实兼容验证与交付**：同一个 `compat_login-26.3-1.1.2.jar` 在 MC **26.1.2、26.2、26.3** 上，用 Fabric Loader 0.19.3 生产官方名环境全部完成真实 Minecraft NameAndId UUID/名字读取、同名 UUID 区分、实际注入 canPlayerLogin 两态拒绝断言，并正常启动至 `Done`；原始日志保存到 `build/reports/login-lock-runtime/*-compat_login-26.3-1.1.2.log`。探针未接真人客户端，完整线上鉴权/文件迁移演练仍属原有验证边界。清理被替代的旧26.2发布JAR和临时探针；旧 `versions/26.2/build` 部分只读缓存删除失败，随后强制删除被自动审批拦截（仅返回 blocked by policy），因此保留残留目录；原 `versions/26.2/logs` 保留。最终根 `build/libs` 只有 `compat_login-1.21.11-1.1.2.jar`、`compat_login-26.3-1.1.2.jar`。配置、CI、文档与产物元数据经独立只读复核，无可操作问题。
+
+### 3.7 本轮（1.1.3：迁移确认崩服、全员掉线修复）
+
+- **日志根因**：用户提供 `2026-11-17-1.log.gz`。14:41:22 `ServerCommandBridge.disconnect` 直接调用旧 `class_3244.method_14367(class_2561)`，抛 `NoSuchMethodError`，沿 `MigrationManager.confirm` 泄漏到服务器命令线程，服务端进入退出流程，其他玩家因此收到 `Server closed`；14:42:23 Watchdog 报超时发生在退出之后。不是模组主动向全服发出 kick。
+- **映射核实**：1.20.1 及更早的断开方法为 `class_3244.method_14367`；从 1.20.2 起移至公共父类 `class_8609.method_52396`。3.2 中“继承 API 可直接跨线调用”的判断忽略了 intermediary 方法名变化，本轮纠正。
+- **修复**：新增纯 Java `PlayerDisconnectBridge`，按实际连接类缓存 public 方法，依次匹配官方名 `disconnect`、新 intermediary `method_52396`、旧 `method_14367`，仅调用传入连接的 void/非静态/单参数且兼容消息的重载。`ServerCommandBridge.disconnect` 返回是否成功派发，准备或调用失败（含 LinkageError）转为 false；确认流程立即删除该次会话、持久化并释放登录锁，不开始玩家文件迁移。确认流程和逐会话 tick 补充 LinkageError 隔离，避免兼容错误导致全服停机。
+- **单元回归**：新增四个踢人桥用例，覆盖旧 API、父类新 API、官方名与重载过滤、旁观连接未改变、未知/空值/抛 NoSuchMethodError 的失败隔离；先观察三个成功分支失败，再实现到全绿。
+- **实际联机回归**：临时生产 Fabric 服务器保持 online-mode=true、仅监听回环地址，用本地鉴权夹具接入 Source/Target/Witness 三个模拟协议客户端。旧1.1.2在1.21.11复现相同NoSuchMethodError与旁观者掉线；新1.1.3在1.20.1、1.20.2、1.21.11完成完整迁移，仅目标断线，统计标记53421正确复制、来源文件移除、目标可重新登录、旁观者持续收到世界tick。额外用临时Mixin强制踢人派发失败，验证会话移除、两位在线玩家均不掉线、来源文件保留。
+- **26.3 额外兼容缺陷**：实际包为 authlib10.0.77，服务改名为 `com.mojang.authlib.services.MinecraftServicesSessionService`，ProfileResult/NameAndId 也迁入 services 包；原仅指向 yggdrasil 的 Mixin 会缺失目标而未完成多源认证。新增 @Pseudo 双目标与第四个 grouped hasJoinedServer 描述符，ProfileResult 构造桥补新包候选；真实 authlib10 ProfileResult 测试先复现 ClassNotFoundException 再通过，NameAndId 测试补新路径。两线各47个测试、0失败，旧线2个可选真实类用例跳过，新线0跳过。
+- **最终运行时与复核**：26.3实际公共父类断开方法被发布JAR解析；再从服务器真实 `services().sessionService()` 调用 `hasJoinedServer`，经新Mixin返回本地提供方的 services.ProfileResult及正确UUID。当前协议测试库尚无26.3数据，因此没有宣称在26.3做TCP多客户端迁移。更改鉴权Mixin后重跑1.20.1/1.21.11完整联机迁移通过，旧目标与新目标的两轮独立只读复核均无可操作问题。
+- **交付与边界**：两个成品仍为 `compat_login-1.21.11-1.1.3.jar`、`compat_login-26.3-1.1.3.jar`；完整验证报告与原始日志保存到 `build/reports/compat-login-1.1.3-verification.md` 和 `build/reports/migration-runtime-1.1.3/`，保留小型测试脚本快照、清理临时服务器及测试依赖。未测试真人外部身份源；本轮没有将同步文件事务改为异步，既有大型迁移性能与崩溃恢复边界仍见第4节。
 
 ## 4. 遗留问题与潜在隐患（全部）
 

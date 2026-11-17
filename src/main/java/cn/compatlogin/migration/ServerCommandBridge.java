@@ -52,8 +52,13 @@ final class ServerCommandBridge {
      * completed is verified asynchronously by the migration state machine (the target must be
      * observed offline before any player data is touched).
      */
-    static void disconnect(MinecraftServer server, ServerPlayer player, String reason) {
-        player.connection.disconnect(MinecraftTextBridge.literal(reason));
+    static boolean disconnect(ServerPlayer player, String reason) {
+        try {
+            return PlayerDisconnectBridge.disconnect(player.connection, MinecraftTextBridge.literal(reason));
+        } catch (RuntimeException | LinkageError failure) {
+            CompatLogin.LOGGER.error("Cannot prepare the migration target disconnect; no player data was changed", failure);
+            return false;
+        }
     }
 
     static void reply(CommandSourceStack source, String message) {

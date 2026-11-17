@@ -10,13 +10,13 @@ import java.util.UUID;
  *
  * <ul>
  *   <li>authlib 2.x-6.x {@code com.mojang.authlib.GameProfile} - {@code getId()}/{@code getName()};</li>
- *   <li>authlib 7.x/9.x {@code GameProfile}, now a record - {@code id()}/{@code name()};</li>
+ *   <li>authlib 7+ {@code GameProfile}, now a record - {@code id()}/{@code name()};</li>
  *   <li>Minecraft 1.21.9-1.21.11 {@code net.minecraft.server.players.NameAndId} -
  *       {@code id()}/{@code name()} in Mojang mappings, but {@code comp_4422()}/{@code comp_4423()}
  *       on intermediary-mapped Fabric production servers ({@code net.minecraft.class_11560});</li>
- *   <li>26.x authlib {@code com.mojang.authlib.yggdrasil.response.NameAndId} -
- *       {@code id()}/{@code name()};</li>
- *   <li>authlib 6.x/7.x {@code ProfileResult} for the session-service return value.</li>
+ *   <li>authlib {@code NameAndId} in the {@code yggdrasil.response} or (authlib 10)
+ *       {@code services.response} package - {@code id()}/{@code name()};</li>
+ *   <li>authlib 6+ {@code ProfileResult}, moved from {@code yggdrasil} to {@code services} in authlib 10.</li>
  * </ul>
  *
  * The public API keeps its original names, but every reader accepts all accessor shapes, so callers
@@ -29,6 +29,7 @@ public final class AuthlibProfileAdapter {
     private static final String MULTIMAP_CLASS = "com.google.common.collect.Multimap";
     private static final String LINKED_HASH_MULTIMAP_CLASS = "com.google.common.collect.LinkedHashMultimap";
     private static final String PROFILE_RESULT_CLASS = "com.mojang.authlib.yggdrasil.ProfileResult";
+    private static final String SERVICES_PROFILE_RESULT_CLASS = "com.mojang.authlib.services.ProfileResult";
     private static final String AUTHENTICATION_UNAVAILABLE_CLASS =
         "com.mojang.authlib.exceptions.AuthenticationUnavailableException";
 
@@ -66,7 +67,13 @@ public final class AuthlibProfileAdapter {
 
     public static Object createProfileResult(Object gameProfile) {
         try {
-            Class<?> profileResultClass = load(PROFILE_RESULT_CLASS);
+            Class<?> profileResultClass;
+            try {
+                profileResultClass = load(PROFILE_RESULT_CLASS);
+            } catch (ClassNotFoundException ignored) {
+                // authlib 10 (Minecraft 26.3) moved the session-service implementation and its DTOs.
+                profileResultClass = load(SERVICES_PROFILE_RESULT_CLASS);
+            }
             return profileResultClass.getConstructor(load(GAME_PROFILE_CLASS)).newInstance(gameProfile);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Cannot create an authlib ProfileResult for this Minecraft version", unwrap(exception));

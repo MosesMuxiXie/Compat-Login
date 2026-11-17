@@ -142,6 +142,7 @@ public final class MigrationManager {
     }
 
     public static synchronized int confirm(CommandSourceStack commandSource, String suppliedCode) {
+        MigrationSession confirmingSession = null;
         try {
             ensureLoaded();
             ServerPlayer player;
@@ -189,13 +190,20 @@ public final class MigrationManager {
             }
             session.state = MigrationSession.WAITING_FOR_DISCONNECT;
             session.disconnectDeadlineMillis = now + DISCONNECT_TIMEOUT_MILLIS;
+            confirmingSession = session;
             persist();
 
             ServerCommandBridge.reply(commandSource,
                 "Migration confirmed. You will be disconnected while the server replaces the UUID data.");
             // Disconnects are asynchronous, so success cannot be checked synchronously; the tick
             // state machine below verifies the player actually left and rolls back on its deadline.
-            ServerCommandBridge.disconnect(commandSource.getServer(), player, DISCONNECT_REASON);
+            if (!ServerCommandBridge.disconnect(player, DISCONNECT_REASON)) {
+                SESSIONS.remove(session);
+                persist();
+                ServerCommandBridge.reply(commandSource,
+                    "Migration cancelled because this server could not disconnect the target safely; no data was changed.");
+                return 0;
+            }
             CompatLogin.LOGGER.info(
                 "Migration code {} confirmed by target {} ({}); disconnect dispatched, waiting for the player to leave",
                 session.code,
@@ -203,7 +211,16 @@ public final class MigrationManager {
                 session.targetUuid
             );
             return 1;
-        } catch (IOException | RuntimeException exception) {
+        } catch (IOException | RuntimeException | LinkageError exception) {
+            // A version bridge must never take down the command thread or leave a half-confirmed lock.
+            if (confirmingSession != null) {
+                SESSIONS.remove(confirmingSession);
+                try {
+                    persist();
+                } catch (IOException | RuntimeException persistFailure) {
+                    exception.addSuppressed(persistFailure);
+                }
+            }
             CompatLogin.LOGGER.error("Cannot confirm player data migration", exception);
             ServerCommandBridge.reply(commandSource, "Could not confirm the migration; see the server log.");
             return 0;
@@ -318,7 +335,7 @@ public final class MigrationManager {
                     iterator.remove();
                     dirty = true;
                 }
-            } catch (IOException | RuntimeException exception) {
+            } catch (IOException | RuntimeException | LinkageError exception) {
                 CompatLogin.LOGGER.error(
                     "Player migration {} ({}) -> {} ({}) failed",
                     session.sourceName,
